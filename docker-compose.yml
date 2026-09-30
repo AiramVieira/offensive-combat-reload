@@ -1,14 +1,56 @@
 # docker compose up -d --build   →   http://<este-computador>:8080
 # Change the public port with PORTA, e.g.  PORTA=80 docker compose up -d --build
+# Development (npm run dev:online) only needs the database and Redis:  docker compose up -d banco redis
+# Secrets and public addresses come from a .env file next to this one (see docs/DEPLOY.md).
 services:
   jogo:
     build: { context: ., target: server }
     restart: unless-stopped
     # Not published: only nginx talks to it, over the internal network.
     expose: ['8787']
+    depends_on:
+      banco: { condition: service_healthy }
+      redis: { condition: service_started }
+    environment:
+      DATABASE_URL: postgres://oc:${PG_SENHA:-oc}@banco:5432/oc
+      REDIS_URL: redis://redis:6379
+      ORIGENS_PERMITIDAS: ${ORIGENS_PERMITIDAS:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_RETORNOS: ${DISCORD_RETORNOS:-}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA_APP: ${SMTP_SENHA_APP:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
 
   web:
     build: { context: ., target: web }
     restart: unless-stopped
     depends_on: [jogo]
     ports: ['${PORTA:-8080}:80']
+
+  # Accounts, profiles, progress and stats. Published on localhost only, for development and backups.
+  banco:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oc
+      POSTGRES_PASSWORD: ${PG_SENHA:-oc}
+      POSTGRES_DB: oc
+    volumes: ['oc-pg:/var/lib/postgresql']
+    ports: ['127.0.0.1:${PG_PORTA:-5442}:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U oc -d oc']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Rate limits, lockouts, WebSocket tickets, password-reset links and revocation events. Nothing here
+  # needs to survive a restart, so persistence is off.
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    ports: ['127.0.0.1:${REDIS_PORTA:-6392}:6379']
+
+volumes:
+  oc-pg:

@@ -9,7 +9,7 @@ export class Scoreboard {
 
   constructor() {
     document.getElementById('scoreboard-title')!.textContent = t('scoreboard');
-    document.getElementById('scoreboard-head')!.innerHTML = ['#', t('player'), t('points'), t('kills'), t('deaths'), t('humiliationsShort'), 'Ping'].map((h) => `<th>${h}</th>`).join('');
+    document.getElementById('scoreboard-head')!.innerHTML = ['#', t('player'), t('level'), t('points'), t('kills'), t('deaths'), t('humiliationsShort'), 'Ping'].map((h) => `<th>${h}</th>`).join('');
   }
 
   set visible(v: boolean) {
@@ -27,7 +27,8 @@ export class Scoreboard {
       const tr = document.createElement('tr');
       if (p.id === me) tr.className = 'me';
       if (!p.alive) tr.classList.add('dead');
-      const cells = [String(i + 1), p.name, String(p.score), String(p.kills), String(p.deaths), String(p.humiliations), `${p.ping} ms`];
+      // Bots and offline players have no account level.
+      const cells = [String(i + 1), p.name, p.nivel ? String(p.nivel) : '—', String(p.score), String(p.kills), String(p.deaths), String(p.humiliations), `${p.ping} ms`];
       for (const c of cells) {
         const td = document.createElement('td');
         td.textContent = c;

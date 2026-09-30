@@ -3,7 +3,7 @@
 // the game code.
 import type { HitRegion } from './weapons';
 import { HUMILIATION } from './constants';
-import type { Loadout } from './progression';
+import type { Loadout, ProgWeapon } from './progression';
 
 export const NET = {
   /** Server simulation/broadcast rate. */
@@ -62,7 +62,10 @@ export const asSex = (v: unknown): Sex => (v === 'f' ? 'f' : 'm');
 
 export interface PlayerInfo {
   id: number;
+  /** Name#1234 of the player's account. */
   name: string;
+  /** Account level (shown on the scoreboard). */
+  nivel: number;
   sex: Sex;
   /** Equipped level of each weapon (for weapon names in the kill feed). */
   lo?: Loadout;
@@ -94,7 +97,8 @@ export interface CorpseInfo {
 
 // --- Client → server --------------------------------------------------------------------------------
 export type ClientMsg =
-  | { t: 'hello'; name: string; sex?: Sex }
+  /** Identity comes from the ticket the connection was opened with; name and body come from the account. */
+  | { t: 'hello' }
   | { t: 'list' }
   | { t: 'create'; name: string }
   | { t: 'join'; session: string }
@@ -107,7 +111,7 @@ export type ClientMsg =
   | { t: 'stab'; target: number; behind: boolean }
   /** impact: explodes on its first contact instead of by fuse (fuse is then the flight time limit). */
   | { t: 'grenade'; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean; mine?: boolean }
-  /** Equipped weapon levels (progression is stored by the client; the server applies the levels' stats). */
+  /** Equipped weapon levels; the server ignores levels the account hasn't unlocked. */
   | { t: 'loadout'; lo: Loadout }
   | { t: 'boom'; id: number; p: Vec3; hits: { target: number; dist: number }[] }
   | { t: 'selfDamage'; amount: number; cause: 'fall' | 'void' | 'dog' }
@@ -139,7 +143,17 @@ export type ServerMsg =
   | { t: 'tauntEnd'; id: number; corpse: number; done: boolean; awards: Award[]; players: PlayerInfo[] }
   | { t: 'scores'; players: PlayerInfo[] }
   | { t: 'prop'; id: string; by: number }
-  | { t: 'pong'; c: number; s: number };
+  | { t: 'pong'; c: number; s: number }
+  /** The account's progress changed (points only come from the server online). */
+  | { t: 'progresso'; armas: Record<ProgWeapon, { xp: number; nivel: number; equipado: number }>; conta: { xp: number; nivel: number }; subiu?: { tipo: ProgWeapon | 'conta'; nivel: number } };
+
+/** WebSocket close codes sent by the server. */
+export const CLOSE = {
+  /** Session revoked: logout, password reset, ban or account deletion. */
+  revoked: 4001,
+  /** The same account connected somewhere else. */
+  replaced: 4002,
+} as const;
 
 export function sanitizeName(raw: unknown, max: number): string {
   const s = String(raw ?? '')

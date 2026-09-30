@@ -1,0 +1,8 @@
+{
+  "_doc": "Nível da conta. XP próprio, ganho só online: porMinutoVivo a cada minuto vivo numa sessão, porAbate e porHumilhacao por evento. Custo do nível n para n+1 = round(base × n^expoente).",
+  "porMinutoVivo": 10,
+  "porAbate": 25,
+  "porHumilhacao": 50,
+  "base": 1000,
+  "expoente": 1.5
+}

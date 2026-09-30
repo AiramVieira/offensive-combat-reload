@@ -4,20 +4,33 @@ Homenagem de mecânicas ao FPS de navegador da U4iA Games. Esta é a **Fase 1 do
 
 ```bash
 npm install
+docker compose up -d banco redis   # PostgreSQL + Redis das contas (uma vez; ficam rodando)
 npm run dev:online   # servidor do jogo + Vite: http://localhost:5173
 npm run dev          # só o cliente (treino offline funciona sem servidor)
+npm test             # testes do servidor (usam o banco e o Redis acima)
 npm run build && npm start   # produção: jogo e servidor numa porta só, http://localhost:8787
-docker compose up -d --build # produção com nginx na frente: http://localhost:8080
+docker compose up -d --build # produção com nginx, banco e Redis: http://localhost:8080
 ```
 
 Para **publicar e jogar com amigos** (Radmin VPN, túnel, roteador ou servidor alugado, com nginx), veja **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
 ## Jogar online
 
-Ao abrir o jogo, a **home** pede seu nome e o **sexo do personagem** (masculino ou feminino: a personagem tem cabelo com rabo de cavalo e silhueta própria; todos veem a escolha, online e nos corpos) e mostra três opções:
-- **Jogar online:** lista as sessões abertas ("Rua dos Vizinhos" sempre existe), com quantos jogadores há em cada uma, e permite **criar** uma sessão com nome. Cada sessão é um **mata-mata livre** de até 10 jogadores: todos contra todos.
+Ao abrir o jogo, a **home** mostra a sua **conta** e três opções. O **sexo do personagem** é escolhido no **Perfil** (masculino ou feminino: a personagem tem cabelo com rabo de cavalo e silhueta própria; todos veem a escolha, online e nos corpos); sem conta, o personagem é o masculino.
+- **Jogar online** (exige conta): lista as sessões abertas ("Rua dos Vizinhos" sempre existe), com quantos jogadores há em cada uma, e permite **criar** uma sessão com nome. Cada sessão é um **mata-mata livre** de até 10 jogadores: todos contra todos.
 - **Contra bots:** mata-mata livre offline contra 3 a 9 bots (fácil, normal ou difícil). Veja [Bots](#bots).
 - **Treino offline:** o campo com os bonecos, sem servidor.
+
+### Contas
+
+Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o **Discord**. Treino e contra bots funcionam sem conta, com todas as armas no nível 1.
+
+- O jogador aparece como **Nome#1234**: nomes podem repetir, o número diferencia. A primeira troca de nome é livre; depois, uma a cada 7 dias.
+- O **Perfil** (na home) tem a escolha do sexo do personagem e mostra o nível da conta, as estatísticas (abates, mortes, na cabeça, no pássaro, facadas, humilhações, tempo jogado) e as últimas 10 participações. Ali também ficam "Vincular Discord", "Sair da conta" e "Excluir conta" (30 dias para desistir).
+- A **conta tem nível** com XP próprio, ganho só online: 10 por minuto vivo, 25 por abate e 50 por humilhação. Do nível n para o n+1 custa 1000 × n^1,5 ([shared/data/nivel_conta.json](shared/data/nivel_conta.json)). O placar (`Tab`) mostra o nível de cada um.
+- "Esqueci a senha" manda um link válido por 24 h. Sem Gmail configurado, o link aparece no log do servidor.
+- A sessão fica num cookie `HttpOnly` por 30 dias (renovados a cada uso); o navegador não guarda token nenhum. O WebSocket abre com um ticket de uso único válido por 30 s. A mesma conta só joga em um lugar por vez: entrar em outro derruba a conexão antiga.
+- Configuração de e-mail, Discord, backup e moderação: [docs/DEPLOY.md](docs/DEPLOY.md#5-contas-banco-e-mail-e-discord).
 
 **Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Node no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
 
@@ -29,13 +42,13 @@ No mata-mata livre (online e contra bots) há **21 pontos de nascimento neutros*
 
 ### O que é do servidor e o que é do cliente
 
-O servidor ([server/](server/)) é a autoridade sobre **vida, dano, abates, pontos, respawn e corpos humilháveis**. Ele usa as mesmas regras de `shared/` que o cliente (dados das armas, níveis de granada, tabela de pontos). O cliente envia sua posição a 20 Hz e informa o que seus tiros, facadas e granadas acertaram. O servidor **confere cada informação** antes de aplicar: se os dois estão vivos, a cadência, a distância real entre os jogadores (com folga para a latência), o alcance, o raio da granada e a janela e distância da humilhação. Os outros jogadores aparecem **interpolados 100 ms no passado** entre dois snapshots, com as mesmas hitboxes dos bonecos. O protocolo está em [shared/protocol.ts](shared/protocol.ts).
+O servidor ([server/](server/)) é a autoridade sobre **contas, vida, dano, abates, pontos, progresso das armas, respawn e corpos humilháveis**. Ele usa as mesmas regras de `shared/` que o cliente (dados das armas, níveis de granada, tabela de pontos). O cliente envia sua posição a 20 Hz e informa o que seus tiros, facadas e granadas acertaram. O servidor **confere cada informação** antes de aplicar: se os dois estão vivos, a cadência, a distância real entre os jogadores (com folga para a latência), o alcance, o raio da granada e a janela e distância da humilhação. Os outros jogadores aparecem **interpolados 100 ms no passado** entre dois snapshots, com as mesmas hitboxes dos bonecos. O protocolo está em [shared/protocol.ts](shared/protocol.ts).
 
 **Ainda não feito** (próxima etapa da seção 14): predição e reconciliação com o servidor simulando o movimento (hoje a posição é confiada ao cliente); compensação de lag (rewind das hitboxes no servidor); mensagens binárias; fim de partida (limite de abates e tempo) e votação de mapa.
 
 ## Progressão das armas
 
-Cada abate rende pontos (o abate mais os bônus: tiro na cabeça, "no pássaro", facada pelas costas…) **só para a arma que matou**. Quem só usa o rifle só evolui o rifle; para evoluir a faca e a granada é preciso matar com elas. O progresso fica salvo no navegador (`localStorage`, chave `oc.profile`) e vale em todos os modos: campo de tiro, contra bots e online.
+Cada abate rende pontos (o abate mais os bônus: tiro na cabeça, "no pássaro", facada pelas costas…) **só para a arma que matou**. Quem só usa o rifle só evolui o rifle; para evoluir a faca e a granada é preciso matar com elas. O progresso fica **na conta**, no servidor: os pontos só vêm de abates online que o servidor validou, e ele avisa o jogador a cada mudança. No campo de tiro e contra bots vale o nível equipado da conta, mas esses modos não dão pontos. Sem conta, as armas ficam no nível 1.
 
 O **Arsenal**, no menu (início e pausa), mostra cada arma: nível equipado, barra de pontos até o próximo nível e todos os níveis (passe o mouse para ler o que cada um faz). Clique num nível liberado para equipá-lo; ao subir de nível, o novo é equipado automaticamente se você estava usando o seu melhor.
 
@@ -49,7 +62,7 @@ O **Arsenal**, no menu (início e pausa), mostra cada arma: nível equipado, bar
 | 6 | com Luneta do Vovô: luneta 3x, madeira e latão | Macarrão de Piscina | |
 | 7 | Dourado Ostentação: luneta 4x, pente de 40 | Sabre de Luz Paraguaio | |
 
-Pontos necessários: rifle 400 / 1000 / 1800 / 2800 / 4000 / 5500; faca 300 / 750 / 1350 / 2100 / 3000 / 4100; granada 500 / 1300. Com luneta, mirar mostra a visão da luneta. Tudo fica em [shared/data/progression.json](shared/data/progression.json). Online, o cliente informa ao servidor os níveis equipados, e o servidor aplica o dano, a cadência e o alcance de cada um; como o progresso ainda mora no navegador, ele é confiado ao jogador por enquanto.
+Pontos necessários: rifle 400 / 1000 / 1800 / 2800 / 4000 / 5500; faca 300 / 750 / 1350 / 2100 / 3000 / 4100; granada 500 / 1300. Com luneta, mirar mostra a visão da luneta. Tudo fica em [shared/data/progression.json](shared/data/progression.json). Online, o servidor aplica o dano, a cadência e o alcance do nível equipado e ignora níveis que a conta ainda não liberou.
 
 ## Bots
 
@@ -77,11 +90,12 @@ Se o jogo rodar a ~10 FPS, o navegador provavelmente está desenhando sem placa 
 ## Estrutura
 
 ```
-shared/   movimento, constantes e dados de armas (serão usados também pelo servidor)
-client/   core (loop, input), render, world (mapa, superfícies, glTF, física), entities, weapons, gameplay, audio, ui
+shared/   movimento, constantes, dados de armas, progressão, nível da conta e protocolo (cliente e servidor)
+client/   core (loop, input), render, world (mapa, superfícies, glTF, física), entities, weapons, gameplay, audio, ui, net (API e WebSocket)
+server/   app (HTTP + WebSocket), api e auth/ (contas), accounts (SQL), session (partida), progress, migrations/, tests/
 public/   textures/ (manifest.json), models/ e maps/ (.glb), basis/ (decodificador KTX2)
-tools/    gerador dos .glb de exemplo (npm run exemplos:glb)
-docs/     MAPAS.md: como criar mapas, props e texturas
+tools/    gerador dos .glb de exemplo (npm run exemplos:glb) e console de moderação (npm run admin)
+docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, contas, e-mail e Discord
 ```
 
 ## Decisões desta fase

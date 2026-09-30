@@ -2,13 +2,18 @@
 // clients report their movement and what their shots hit, and every report is sanity-checked here with
 // the same shared rules the client uses (weapon data, grenade levels, score table).
 //
+// Every player is a signed-in account: kills, humiliations and time alive feed the account's progress
+// (server/progress.ts), which app.ts writes to the database.
+//
 // Not yet (next netcode step, section 14): server-side movement simulation, rewinding hitboxes for lag
 // compensation, and interest culling. Movement is trusted; hits are validated against server positions
 // with a lag tolerance.
 import type { WebSocket } from 'ws';
 import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
 import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
-import { DEFAULT_LOADOUT, knifeData, levelInfo, rifleData, sanitizeLoadout, type Loadout } from '@shared/progression';
+import { ACCOUNT_XP } from '@shared/accountLevel';
+import { knifeData, levelInfo, rifleData, sanitizeLoadout, weaponOfKill, type Loadout } from '@shared/progression';
+import { accountLevelOf, addAccountXp, addTime, addWeaponXp, equip, equippedOf, progressMsg, type LevelUp, type LiveAccount } from './progress';
 import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
 
 const RIFLE = WEAPONS.rifle_padrao;
@@ -25,6 +30,8 @@ export interface Conn {
   name: string;
   sex: Sex;
   session: Session | null;
+  /** The signed-in account behind this connection (from the WebSocket ticket). */
+  account: LiveAccount;
   send(msg: ServerMsg): void;
 }
 
@@ -33,7 +40,7 @@ interface SPlayer {
   id: number;
   name: string;
   sex: Sex;
-  /** Equipped weapon levels, reported by the client: damage, fire rate and knife reach follow them. */
+  /** Equipped weapon levels (unlocked ones only): damage, fire rate and knife reach follow them. */
   loadout: Loadout;
   state: NetState;
   alive: boolean;
@@ -95,7 +102,7 @@ export class Session {
   }
 
   private playerInfo(p: SPlayer): PlayerInfo {
-    return { id: p.id, name: p.name, sex: p.sex, lo: p.loadout, kills: p.kills, deaths: p.deaths, score: p.score, humiliations: p.humiliations, alive: p.alive, ping: p.ping };
+    return { id: p.id, name: p.name, nivel: accountLevelOf(p.conn.account), sex: p.sex, lo: p.loadout, kills: p.kills, deaths: p.deaths, score: p.score, humiliations: p.humiliations, alive: p.alive, ping: p.ping };
   }
 
   private broadcast(msg: ServerMsg, except?: number) {
@@ -114,7 +121,7 @@ export class Session {
       id: conn.id,
       name,
       sex: conn.sex,
-      loadout: { ...DEFAULT_LOADOUT },
+      loadout: equippedOf(conn.account),
       state: { p: [0, -50, 0], yaw: 0, pitch: 0, f: 0 },
       // Joins dead: the client picks a spawn and sends 'respawn' right away.
       alive: false,
@@ -211,7 +218,8 @@ export class Session {
       case 'boom':
         return this.onBoom(p, msg, now);
       case 'loadout':
-        p.loadout = sanitizeLoadout(msg.lo);
+        equip(p.conn.account, sanitizeLoadout(msg.lo));
+        p.loadout = equippedOf(p.conn.account);
         return;
       case 'selfDamage': {
         if (!p.alive || !finite(msg.amount) || msg.amount <= 0) return;
@@ -324,6 +332,10 @@ export class Session {
       p.humiliations++;
       p.score += SCORE.humiliation;
       awards.push({ label: 'humiliation', value: SCORE.humiliation });
+      const d = p.conn.account.delta;
+      d.humiliations++;
+      d.score += SCORE.humiliation;
+      this.progress(p, [addAccountXp(p.conn.account, ACCOUNT_XP.perHumiliation)]);
     } else {
       c.until = Math.max(c.until, now + 1500);
     }
@@ -351,10 +363,24 @@ export class Session {
     // Only death ends a dance (damage doesn't): the corpse is released without points.
     if (victim.dance) this.onTauntEnd(victim, victim.dance.corpse, false, now);
     const awards: Award[] = [];
+    victim.conn.account.delta.deaths++;
     if (attacker && attacker !== victim) {
       awards.push({ label: 'kill', value: SCORE.kill }, ...bonus);
+      const points = awards.reduce((s, a) => s + a.value, 0);
       attacker.kills++;
-      attacker.score += awards.reduce((s, a) => s + a.value, 0);
+      attacker.score += points;
+      // Progress: the kill's points go to the weapon that made it; the account gets its own XP.
+      const acct = attacker.conn.account;
+      const d = acct.delta;
+      d.kills++;
+      d.score += points;
+      if (kind === 'head') d.headshots++;
+      if (kind === 'groin') d.groinKills++;
+      if (kind === 'knife') d.knifeKills++;
+      if (kind === 'grenade') d.grenadeKills++;
+      if (awards.some((a) => a.label === 'backstab')) d.backstabs++;
+      const w = weaponOfKill(kind);
+      this.progress(attacker, [w ? addWeaponXp(acct, w, points) : null, addAccountXp(acct, ACCOUNT_XP.perKill)]);
     }
     const corpse: Corpse = {
       id: this.nextCorpse++,
@@ -381,6 +407,9 @@ export class Session {
       if (p.alive && p.health < HEALTH.max && now - p.lastDamageAt > HEALTH.regenDelay * 1000) {
         p.health = Math.min(HEALTH.max, p.health + HEALTH.regenPerSecond * dt);
       }
+      const xpBefore = p.conn.account.profile.xp;
+      const up = addTime(p.conn.account, dt, p.alive);
+      if (p.conn.account.profile.xp !== xpBefore) this.progress(p, [up]);
     }
     for (const c of this.corpses.values()) {
       if (c.claimedBy === null && now > c.until + 2000) this.corpses.delete(c.id);
@@ -398,4 +427,11 @@ export class Session {
     }
   }
 
+  /** Tells the player their new progress; a weapon that leveled up may have been equipped. */
+  private progress(p: SPlayer, ups: (LevelUp | null)[]) {
+    p.loadout = equippedOf(p.conn.account);
+    const levelUps = ups.filter((u): u is LevelUp => !!u);
+    if (!levelUps.length) p.conn.send(progressMsg(p.conn.account));
+    for (const up of levelUps) p.conn.send(progressMsg(p.conn.account, up));
+  }
 }

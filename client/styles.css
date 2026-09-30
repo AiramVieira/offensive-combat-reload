@@ -964,15 +964,6 @@ input[type='range'] {
 .session-create input:focus {
   box-shadow: 0 0 0 4px rgba(255, 122, 26, 0.35);
 }
-.home-sex {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
-  font-weight: 900;
-  font-size: 14px;
-  text-transform: uppercase;
-}
 .sex-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1173,4 +1164,191 @@ input[type='range'] {
   border-radius: 8px;
   padding: 2px 6px;
   background: #fff;
+}
+
+/* ---------- Account (home card) ---------- */
+.home-account {
+  margin-bottom: 4px;
+}
+#home-account-in {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#acct-tag {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+#acct-profile {
+  margin-left: auto;
+}
+#acct-guest {
+  margin: 0 0 10px;
+  font-weight: 800;
+  font-size: 14px;
+  opacity: 0.8;
+}
+.acct-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.small-btn.alt {
+  background: var(--team-b);
+}
+.level-badge {
+  flex: none;
+  font-weight: 900;
+  font-size: 13px;
+  padding: 2px 8px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--warn);
+}
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+.auth-form h3,
+.profile h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 24px;
+  margin: 0;
+}
+.profile h3 {
+  margin-top: 14px;
+  font-size: 20px;
+}
+.auth-form .big-btn {
+  width: 100%;
+  padding: 8px 20px;
+  font-size: 26px;
+}
+.auth-form .hint,
+.profile .hint {
+  margin: -4px 0 0;
+  -webkit-text-stroke: 0;
+}
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.auth-links .link-btn,
+.auth-form > .link-btn {
+  margin-top: 0;
+}
+.discord-btn {
+  display: block;
+  text-align: center;
+  font: 900 18px var(--body);
+  color: #fff;
+  background: #5865f2;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  padding: 10px;
+  text-decoration: none;
+  box-shadow: 0 3px 0 var(--ink);
+}
+.discord-btn.small {
+  display: inline-block;
+  font-size: 14px;
+  padding: 6px 12px;
+}
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.profile-tag {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.xp-bar {
+  height: 14px;
+  margin-top: 8px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: #fff;
+  overflow: hidden;
+}
+.xp-bar > div {
+  height: 100%;
+  background: var(--good);
+}
+.profile .hint {
+  margin-top: 4px;
+}
+.profile-warn {
+  margin: 10px 0 6px;
+  font-weight: 800;
+  color: #c0271b;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.stat-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+.part-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-weight: 800;
+  font-size: 13px;
+}
+.part-table th,
+.part-table td {
+  padding: 3px 6px;
+  text-align: right;
+  border-bottom: 2px solid rgba(27, 21, 48, 0.12);
+}
+.part-table td:first-child {
+  text-align: left;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 16px;
+}
+.profile-actions .link-btn {
+  margin-top: 0;
+}
+.link-btn.danger {
+  color: #c0271b;
+}
+#home-profile {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+.profile .sex-toggle {
+  margin-top: 8px;
 }

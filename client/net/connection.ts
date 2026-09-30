@@ -1,5 +1,7 @@
-// WebSocket connection to the game server with clock sync (for snapshot interpolation) and ping.
+// WebSocket connection to the game server with clock sync (for snapshot interpolation) and ping. It opens
+// with a single-use ticket from the account API (the browser can't send auth headers on a WebSocket).
 import { NET, type ClientMsg, type ServerMsg } from '@shared/protocol';
+import { api } from './api';
 
 type Handler<T extends ServerMsg['t']> = (msg: Extract<ServerMsg, { t: T }>) => void;
 
@@ -10,7 +12,8 @@ export class Connection {
   private synced = false;
   rtt = 0;
   private pingTimer: number;
-  onClose: () => void = () => {};
+  /** Close code: CLOSE.revoked / CLOSE.replaced from the server, anything else is a lost connection. */
+  onClose: (code: number) => void = () => {};
 
   private constructor(private ws: WebSocket) {
     ws.addEventListener('message', (ev) => {
@@ -23,16 +26,21 @@ export class Connection {
       if (msg.t === 'pong') this.onPong(msg.c, msg.s);
       for (const h of this.handlers.get(msg.t) ?? []) h(msg);
     });
-    ws.addEventListener('close', () => {
+    ws.addEventListener('close', (ev) => {
       clearInterval(this.pingTimer);
-      this.onClose();
+      this.onClose(ev.code);
     });
     this.pingTimer = window.setInterval(() => this.send({ t: 'ping', c: performance.now(), rtt: this.rtt }), 1000);
     this.send({ t: 'ping', c: performance.now() });
   }
 
-  /** Same origin as the page: Vite proxies /ws in dev, the game server serves both in production. */
-  static open(url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${NET.path}`): Promise<Connection> {
+  /**
+   * Same origin as the page: Vite proxies /ws in dev, the game server serves both in production. Throws
+   * the API's error when there is no signed-in session.
+   */
+  static async open(): Promise<Connection> {
+    const { ticket } = await api<{ ticket: string }>('POST', '/api/ws-ticket');
+    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${NET.path}?ticket=${encodeURIComponent(ticket)}`;
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       const fail = () => reject(new Error('não foi possível conectar ao servidor'));

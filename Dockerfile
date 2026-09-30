@@ -17,6 +17,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
 COPY --from=build /app/dist ./dist
+COPY server/migrations ./server/migrations
 USER node
 EXPOSE 8787
 CMD ["node", "build/server.mjs"]
