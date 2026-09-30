@@ -42,9 +42,23 @@ export class Weapon {
   private shotIndex = 0;
   private semiLatch = false;
 
-  constructor(readonly data: WeaponData, private hooks: WeaponHooks) {
+  constructor(
+    public data: WeaponData,
+    private hooks: WeaponHooks,
+  ) {
     this.mag = data.pente;
     this.reserve = data.reserva;
+  }
+
+  /**
+   * Switches to another level of the gun mid-life. Ammo carries over (up to the new capacities), so a level
+   * up is not a free reload.
+   */
+  setData(d: WeaponData) {
+    if (d === this.data) return;
+    this.data = d;
+    this.mag = Math.min(this.mag, d.pente);
+    this.reserve = Math.min(this.reserve, d.reserva);
   }
 
   get reloadProgress(): number | null {

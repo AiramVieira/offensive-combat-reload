@@ -2,8 +2,10 @@
 // Handles ADS blend, sprint pose, reload animation, bob, sway, strafe tilt and recoil kick (section 4).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { PROGRESSION, type GrenadeKind, type KnifeModel, type RifleLevel } from '@shared/progression';
 import { PALETTE, toon, toonGradient } from './materials';
 import { grenadeModel } from '../weapons/grenades';
+import { knifeModel, mineModel, rifleParts } from './weaponModels';
 
 export interface ViewmodelState {
   ads: number; // 0..1
@@ -26,17 +28,21 @@ export interface ViewmodelState {
 }
 
 const HIP = new THREE.Vector3(0.15, -0.15, -0.4);
-const ADS = new THREE.Vector3(0, -0.057, -0.36);
+const ADS_Z = -0.36;
 const SPRINT = new THREE.Vector3(0.1, -0.2, -0.34);
 const MUZZLE_LOCAL = new THREE.Vector3(0, 0.012, -0.47);
 
 export class Viewmodel {
   readonly root = new THREE.Group();
   private gun = new THREE.Group();
-  private mag: THREE.Mesh;
+  private mag!: THREE.Mesh;
   private knife = new THREE.Group();
+  private knifeItem: THREE.Object3D | null = null;
   private grenadeArm = new THREE.Group();
-  private grenadeInHand: THREE.Object3D;
+  private grenadeInHand: THREE.Object3D = new THREE.Group();
+  private ads = new THREE.Vector3(0, -0.057, ADS_Z);
+  /** The equipped rifle has a magnified scope (the game swaps to the scope overlay when fully aimed). */
+  scoped = false;
   private flashGroup = new THREE.Group();
   private flashT = 0;
   private sprintT = 0;
@@ -47,54 +53,13 @@ export class Viewmodel {
   private kickRot = 0;
   private tilt = 0;
   private landDip = 0;
+  /** 0..1: how far the rifle is lowered for a melee swing (smoothed so it comes back only afterwards). */
+  private meleeDuck = 0;
   private tmp = new THREE.Vector3();
 
   constructor(vmScene: THREE.Scene) {
-    const metal = toon(0x3a3f47);
-    const dark = toon(0x24272c);
-    const furniture = toon(0x6b5a45);
-    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, rx = 0) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.rotation.x = rx;
-      this.gun.add(m);
-      return m;
-    };
-    const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-
-    add(box(0.05, 0.07, 0.32), metal, 0, 0, 0); // receiver
-    add(new THREE.CylinderGeometry(0.011, 0.011, 0.3, 8).rotateX(Math.PI / 2), dark, 0, 0.012, -0.31); // barrel
-    add(box(0.056, 0.06, 0.2), furniture, 0, -0.004, -0.22); // handguard
-    add(box(0.045, 0.075, 0.2), furniture, 0, -0.012, 0.25); // stock
-    add(box(0.03, 0.085, 0.042), furniture, 0, -0.068, 0.085, 0.35); // pistol grip
-    this.mag = add(box(0.034, 0.13, 0.06), dark, 0, -0.09, -0.045, 0.18);
-    add(box(0.006, 0.016, 0.01), dark, -0.014, 0.047, 0.1); // rear sight (two ears framing the post)
-    add(box(0.006, 0.016, 0.01), dark, 0.014, 0.047, 0.1);
-    add(box(0.034, 0.006, 0.01), dark, 0, 0.041, 0.1);
-    add(box(0.006, 0.03, 0.006), dark, 0, 0.042, -0.36); // front post, tip at y≈0.057
-    add(box(0.022, 0.012, 0.012), dark, 0, 0.03, -0.36);
-    add(box(0.052, 0.008, 0.07), toon(PALETTE.teamA), 0, 0.039, -0.1); // team-colored stripe
-
-    // Arms: sleeve + hand boxes stretched between two points.
     const skin = toon(PALETTE.skin);
     const sleeve = toon(PALETTE.sleeve);
-    const band = toon(PALETTE.teamA);
-    const limb = (from: THREE.Vector3, to: THREE.Vector3, thick: number, mat: THREE.Material) => {
-      const len = from.distanceTo(to);
-      const m = new THREE.Mesh(new THREE.BoxGeometry(thick, thick, len), mat);
-      m.position.copy(from).add(to).multiplyScalar(0.5);
-      m.lookAt(to);
-      this.gun.add(m);
-      return m;
-    };
-    // Right hand on the grip, left hand under the handguard.
-    limb(new THREE.Vector3(0.012, -0.06, 0.1), new THREE.Vector3(0.012, -0.075, 0.05), 0.05, skin);
-    limb(new THREE.Vector3(0.02, -0.08, 0.12), new THREE.Vector3(0.09, -0.2, 0.34), 0.07, sleeve);
-    limb(new THREE.Vector3(0.05, -0.13, 0.21), new THREE.Vector3(0.062, -0.15, 0.245), 0.074, band);
-    limb(new THREE.Vector3(-0.005, -0.04, -0.24), new THREE.Vector3(-0.01, -0.055, -0.18), 0.052, skin);
-    limb(new THREE.Vector3(-0.02, -0.06, -0.2), new THREE.Vector3(-0.17, -0.24, 0.1), 0.07, sleeve);
-    limb(new THREE.Vector3(-0.1, -0.15, -0.05), new THREE.Vector3(-0.115, -0.17, -0.02), 0.074, band);
-
     // Muzzle flash: two crossed additive quads.
     const flashMat = new THREE.MeshBasicMaterial({ map: flashTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const quad = new THREE.PlaneGeometry(0.16, 0.16);
@@ -107,27 +72,17 @@ export class Viewmodel {
     this.flashGroup.visible = false;
     this.gun.add(this.flashGroup);
 
-    // Knife + right hand, shown only during a melee swing.
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.035, 0.2), toon(0xd8dde3));
-    blade.position.z = -0.14;
-    const edge = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.06, 4).rotateX(-Math.PI / 2), toon(0xd8dde3));
-    edge.position.z = -0.27;
-    edge.scale.set(0.4, 1, 1);
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.015), toon(0x24272c));
-    guard.position.z = -0.035;
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.032, 0.1), toon(0x3b2a1e));
-    handle.position.z = 0.02;
+    // Knife (or whatever the knife level is) + right hand, shown only during a melee swing.
     const fist = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.08), skin);
     fist.position.z = 0.02;
     const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.3), sleeve);
     forearm.position.set(0.02, -0.02, 0.2);
-    this.knife.add(blade, edge, guard, handle, fist, forearm);
+    this.knife.add(fist, forearm);
+    this.setKnife('faca');
     this.knife.visible = false;
 
-    // Left arm holding a grenade, shown while cooking/throwing.
-    this.grenadeInHand = grenadeModel();
-    this.grenadeInHand.position.set(0, 0.03, -0.02);
-    this.grenadeInHand.scale.setScalar(0.7);
+    // Left arm holding a grenade (or a mine, or two grenades), shown while cooking/throwing.
+    this.setGrenadeKind('granada');
     const gHand = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.06, 0.08), skin);
     gHand.position.set(0, -0.03, 0.01);
     const gSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.32), sleeve);
@@ -136,9 +91,82 @@ export class Viewmodel {
     this.grenadeArm.add(this.grenadeInHand, gHand, gSleeve);
     this.grenadeArm.visible = false;
 
-    bakeStaticParts(this.gun, [this.mag, this.flashGroup]);
+    this.setRifle(PROGRESSION.rifle[0]);
     this.root.add(this.gun, this.knife, this.grenadeArm);
     vmScene.add(this.root);
+  }
+
+  /** Rebuilds the rifle for a progression level: its sight, paint job and the matching ADS pose. */
+  setRifle(level: RifleLevel) {
+    for (const child of [...this.gun.children]) {
+      if (child === this.flashGroup) continue;
+      this.gun.remove(child);
+      child.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+    const parts = rifleParts(level);
+    for (const m of parts.meshes) this.gun.add(m);
+    this.mag = parts.mag;
+    this.gun.add(this.mag);
+    // Arms: sleeve + hand boxes stretched between two points. Right hand on the grip, left under the handguard.
+    const skin = toon(PALETTE.skin);
+    const sleeve = toon(PALETTE.sleeve);
+    const band = toon(PALETTE.teamA);
+    const limb = (from: THREE.Vector3, to: THREE.Vector3, thick: number, mat: THREE.Material) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(thick, thick, from.distanceTo(to)), mat);
+      m.position.copy(from).add(to).multiplyScalar(0.5);
+      m.lookAt(to);
+      this.gun.add(m);
+    };
+    limb(new THREE.Vector3(0.012, -0.06, 0.1), new THREE.Vector3(0.012, -0.075, 0.05), 0.05, skin);
+    limb(new THREE.Vector3(0.02, -0.08, 0.12), new THREE.Vector3(0.09, -0.2, 0.34), 0.07, sleeve);
+    limb(new THREE.Vector3(0.05, -0.13, 0.21), new THREE.Vector3(0.062, -0.15, 0.245), 0.074, band);
+    limb(new THREE.Vector3(-0.005, -0.04, -0.24), new THREE.Vector3(-0.01, -0.055, -0.18), 0.052, skin);
+    limb(new THREE.Vector3(-0.02, -0.06, -0.2), new THREE.Vector3(-0.17, -0.24, 0.1), 0.07, sleeve);
+    limb(new THREE.Vector3(-0.1, -0.15, -0.05), new THREE.Vector3(-0.115, -0.17, -0.02), 0.074, band);
+    for (const gl of parts.glow) this.gun.add(gl);
+    if (!this.flashGroup.parent) this.gun.add(this.flashGroup);
+    bakeStaticParts(this.gun, [this.mag, this.flashGroup, ...parts.glow]);
+    this.ads.set(0, -parts.sightY, ADS_Z);
+    this.scoped = parts.scoped;
+  }
+
+  /** Swaps what the melee hand swings (knife, wooden spoon, rubber chicken...). */
+  setKnife(model: KnifeModel) {
+    if (this.knifeItem) {
+      this.knife.remove(this.knifeItem);
+      this.knifeItem.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+    this.knifeItem = knifeModel(model);
+    if (model !== 'faca') this.knifeItem.scale.setScalar(1.2);
+    this.knife.add(this.knifeItem);
+    this.swingKeys = model === 'faca' ? Viewmodel.KNIFE_KEYS : Viewmodel.SWING_KEYS;
+  }
+
+  /** What the left hand holds for G: a grenade, a land mine or two grenades. */
+  setGrenadeKind(kind: GrenadeKind) {
+    this.grenadeArm.remove(this.grenadeInHand);
+    let item: THREE.Object3D;
+    if (kind === 'mina') {
+      item = mineModel().group;
+      item.scale.setScalar(0.42);
+      item.rotation.x = 0.9;
+      item.position.set(0, 0.02, -0.03);
+    } else if (kind === 'dupla') {
+      item = new THREE.Group();
+      for (const x of [-0.035, 0.035]) {
+        const g = grenadeModel();
+        g.position.x = x;
+        item.add(g);
+      }
+      item.scale.setScalar(0.7);
+      item.position.set(0, 0.03, -0.02);
+    } else {
+      item = grenadeModel();
+      item.scale.setScalar(0.7);
+      item.position.set(0, 0.03, -0.02);
+    }
+    this.grenadeInHand = item;
+    this.grenadeArm.add(item);
   }
 
   kick() {
@@ -163,11 +191,22 @@ export class Viewmodel {
     [0.12, [0.26, -0.12, -0.26], [0.25, 0.55, -1.2]],
     [0.3, [-0.02, -0.08, -0.52], [-0.05, -0.25, 0.35]],
     [0.55, [-0.06, -0.12, -0.46], [-0.1, -0.35, 0.5]],
-    [1, [0.3, -0.4, -0.2], [0.5, 0.2, -0.3]],
+    [1, [0.3, -0.62, -0.2], [0.5, 0.2, -0.3]],
   ];
 
+  // Everything that isn't a blade (spoon, chicken, baguette, fish, noodle, saber) is swung in an arc from
+  // the upper right across to the left, so you see it side-on when it connects.
+  private static readonly SWING_KEYS: [t: number, pos: [number, number, number], rot: [number, number, number]][] = [
+    [0, [0.34, -0.3, -0.3], [1.1, -0.6, 0]],
+    [0.14, [0.3, -0.1, -0.36], [1.25, -0.95, 0.1]],
+    [0.32, [-0.02, -0.1, -0.42], [0.15, 0.95, 0.3]],
+    [0.55, [-0.12, -0.16, -0.4], [-0.1, 1.15, 0.4]],
+    [1, [0.3, -0.62, -0.2], [0.5, 0.2, -0.3]],
+  ];
+  private swingKeys = Viewmodel.KNIFE_KEYS;
+
   private poseKnife(p: number) {
-    const keys = Viewmodel.KNIFE_KEYS;
+    const keys = this.swingKeys;
     let i = 0;
     while (i < keys.length - 2 && p > keys[i + 1][0]) i++;
     const [t0, p0, r0] = keys[i];
@@ -188,7 +227,7 @@ export class Viewmodel {
     this.sprintT += ((s.sprint > 0.5 ? 1 : 0) - this.sprintT) * k(10);
 
     // Base pose: hip -> ADS -> sprint.
-    const pos = this.tmp.copy(HIP).lerp(ADS, s.ads).lerp(SPRINT, this.sprintT);
+    const pos = this.tmp.copy(HIP).lerp(this.ads, s.ads).lerp(SPRINT, this.sprintT);
     let rx = this.sprintT * -0.35;
     let ry = this.sprintT * 0.75;
     let rz = this.sprintT * 0.25;
@@ -239,16 +278,18 @@ export class Viewmodel {
     rx += this.kickRot * (1 - s.ads * 0.6);
     pos.y -= this.landDip + s.crouch * 0.01;
 
-    // Knife swing: the rifle ducks out of the way while the knife stabs across the screen.
-    if (s.melee !== null) {
-      const p = s.melee;
-      const duck = Math.sin(Math.min(1, p * 1.25) * Math.PI);
-      pos.y -= duck * 0.16;
+    // Knife swing: the rifle ducks out of view quickly, stays down for the whole swing and is only drawn
+    // back up once the knife is gone (it used to come back while the knife was still on screen).
+    const meleeOn = s.melee !== null;
+    this.meleeDuck += ((meleeOn ? 1 : 0) - this.meleeDuck) * k(meleeOn ? 24 : 11);
+    if (this.meleeDuck > 0.001) {
+      const duck = THREE.MathUtils.smoothstep(this.meleeDuck, 0, 1);
+      pos.y -= duck * 0.22;
       pos.x += duck * 0.06;
-      rx -= duck * 0.6;
+      rx -= duck * 0.7;
       rz -= duck * 0.4;
-      this.poseKnife(p);
     }
+    if (meleeOn) this.poseKnife(s.melee!);
     this.knife.visible = s.melee !== null;
 
     // Grenade: the rifle ducks while the left hand holds the grenade up, then a quick overhand throw.

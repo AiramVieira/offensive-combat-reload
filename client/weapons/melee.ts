@@ -17,7 +17,12 @@ export class Melee {
   private resolved = false;
   target: Target | null = null;
 
-  constructor(readonly data: MeleeData) {}
+  constructor(public data: MeleeData) {}
+
+  /** Another level of the melee weapon (longer reach); takes effect on the next swing. */
+  setData(d: MeleeData) {
+    this.data = d;
+  }
 
   get progress(): number | null {
     return this.t === null ? null : Math.min(1, this.t / this.data.duracao);

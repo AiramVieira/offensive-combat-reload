@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { pickSafeSpawn } from './gameplay/spawnPicker';
 import { GROUP, groups, HEALTH, HUMILIATION, MOVE, SCORE } from '@shared/constants';
-import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, idealTtk, LETHAL_DAMAGE, MELEE, WEAPONS, type HitRegion } from '@shared/weapons';
+import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, idealTtk, LETHAL_DAMAGE, type HitRegion } from '@shared/weapons';
 import { eyeHeight, type MoveInput } from '@shared/movement';
 import { FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
 import { startLoop } from './core/loop';
@@ -41,6 +41,10 @@ import { Sfx } from './audio/sfx';
 import { Hud, type FeedIcon } from './ui/hud';
 import { Screens } from './ui/menu';
 import { showHome } from './ui/home';
+import { Progress } from './gameplay/progress';
+import { MAX_MINES, Mines } from './weapons/mines';
+import { Arsenal } from './ui/arsenal';
+import { DEFAULT_LOADOUT, knifeData, levelInfo, rifleData, weaponOfKill, type KnifeSound, type Loadout, type ProgWeapon } from '@shared/progression';
 import { Scoreboard } from './ui/scoreboard';
 import { DEATH_MESSAGES, getLang, pick, t, type StringKey } from './ui/strings';
 
@@ -54,6 +58,9 @@ const GRENADE_LEVEL = ONLINE_GRENADE_LEVEL;
 
 const vec3 = (v: THREE.Vector3): Vec3 => [+v.x.toFixed(3), +v.y.toFixed(3), +v.z.toFixed(3)];
 const KIND_ICON: Record<KillKind, FeedIcon> = { gun: null, head: 'head', groin: 'bird', knife: 'knife', grenade: 'grenade', fall: null, void: null, explosion: 'grenade', dog: 'dog' };
+const WEAPON_LABEL: Record<ProgWeapon, StringKey> = { rifle: 'weaponRifle', faca: 'weaponKnife', granada: 'weaponGrenade' };
+/** Dose Dupla: seconds between the two grenades of one throw. */
+const DOUBLE_THROW_GAP = 0.3;
 const AWARD_TEXT: Record<AwardLabel, StringKey> = { kill: 'kill', headshot: 'headshot', groin: 'groin', knife: 'knife', backstab: 'backstab', longShot: 'longShot', humiliation: 'humiliation' };
 
 async function boot() {
@@ -96,12 +103,15 @@ async function boot() {
   const net = online ? new RemoteWorld(physics.world, ctx.scene, registry, conn!, me) : null;
   const effects = new Effects(ctx.scene);
   const viewmodel = new Viewmodel(ctx.vmScene);
+  // Saved weapon progression (localStorage) and our land mines (grenade level 2).
+  const progress = new Progress();
+  const mines = new Mines(physics, ctx.scene);
   const player = new LocalPlayer(physics, map.killY);
   player.netControlled = !!online;
   if (online) player.respawnDelay = NET.respawnDelay + 0.3;
   if (botMode) player.respawnDelay = 5;
   const avatar = new Avatar(ctx.scene, LOCAL_COLORS, choice.sex);
-  const melee = new Melee(MELEE.faca);
+  const melee = new Melee(knifeData(progress.equipped('faca')));
   const grenadeData = GRENADES.granada_frag;
   const grenadeLvl = grenadeLevel(grenadeData, GRENADE_LEVEL);
   const thrower = new GrenadeThrower(grenadeData);
@@ -161,6 +171,8 @@ async function boot() {
   };
   let spawnedAt = 0;
   const respawn = () => {
+    // Mines only exist while their owner is alive: they go away as we come back.
+    mines.clearOwner(null);
     lastSpawn = pickSpawn();
     player.spawn(lastSpawn);
     if (bots) bots.protect(playerTarget);
@@ -222,7 +234,7 @@ async function boot() {
     effects.burst('confetti', at, UP, 25, 0xffd23f);
   };
 
-  const weapon: Weapon = new Weapon(WEAPONS.rifle_padrao, {
+  const weapon: Weapon = new Weapon(rifleData(progress.equipped('rifle')), {
     shoot(spread, shotIndex) {
       shots++;
       bots?.unprotect(playerTarget);
@@ -289,6 +301,7 @@ async function boot() {
         sfx.hitmarker(res.headshot || groin);
         hud.hit(res.killed ? 'kill' : res.headshot ? 'head' : 'hit');
         if (res.killed) {
+          const p0 = points;
           onKill(dummy, res, weapon.data.nome, groin ? 'bird' : res.headshot ? 'head' : null);
           if (res.headshot) award(t('headshot'), SCORE.headshot);
           if (groin) {
@@ -296,6 +309,7 @@ async function boot() {
             groinFx(hit.point);
           }
           if (hit.distance > SCORE.longShotDistance) award(t('longShot'), SCORE.longShot);
+          gainXp('rifle', points - p0);
         }
       } else {
         effects.decal(hit.point, hit.normal);
@@ -313,13 +327,43 @@ async function boot() {
   });
   hud.setWeaponName(weapon.data.nome);
 
+  // --- Weapon progression: each kill's points level up only the weapon that made it ------------------
+  let knifeSound: KnifeSound = 'faca';
+  /** Puts the equipped level of each weapon in our hands (and tells the server, which uses it too). */
+  const applyLoadout = () => {
+    const r = levelInfo('rifle', progress.equipped('rifle'));
+    weapon.setData(rifleData(r.nivel));
+    viewmodel.setRifle(r);
+    hud.setWeaponName(r.nome);
+    const k = levelInfo('faca', progress.equipped('faca'));
+    melee.setData(knifeData(k.nivel));
+    viewmodel.setKnife(k.modelo);
+    knifeSound = k.som;
+    const g = levelInfo('granada', progress.equipped('granada'));
+    thrower.kind = g.tipo;
+    viewmodel.setGrenadeKind(g.tipo);
+    conn?.send({ t: 'loadout', lo: progress.loadout });
+  };
+  const gainXp = (w: ProgWeapon | null, pts: number) => {
+    if (!w || pts <= 0) return;
+    const up = progress.addKill(w, pts);
+    if (!up) return;
+    const info = levelInfo(up.weapon, up.level);
+    hud.showBanner(`${info.icone} ${t('levelUp', { weapon: t(WEAPON_LABEL[up.weapon]), level: up.level })}: ${info.nome}!`, 'level');
+    sfx.levelUp();
+    applyLoadout();
+  };
+  new Arsenal(progress, () => applyLoadout());
+  applyLoadout();
+  const scopeEl = document.getElementById('scope')!;
+
   // --- Knife ----------------------------------------------------------------------------------------
   const startMelee = () => {
     player.eye(1, eye);
     const found = findMeleeTarget(physics, targets(), eye, player.yaw, melee.data.alcanceInvestida, melee.data.anguloGraus);
     if (!melee.tryStart(found?.target ?? null)) return;
     weapon.cancelReload();
-    sfx.knifeSwing();
+    sfx.meleeSwing(knifeSound);
     conn?.send({ t: 'swing' });
   };
 
@@ -350,9 +394,11 @@ async function boot() {
     if (res.damage <= 0) return;
     hud.hit(res.killed ? 'kill' : 'hit');
     if (res.killed) {
-      onKill(dummy, res, t('knifeName'), 'knife');
+      const p0 = points;
+      onKill(dummy, res, melee.data.nome, 'knife');
       award(t('knife'), SCORE.knife);
       if (behind) award(t('backstab'), SCORE.backstab);
+      gainXp('faca', points - p0);
     }
   };
 
@@ -408,6 +454,22 @@ async function boot() {
   let shake = 0; // camera trauma 0..1
   let lastBeep = -1;
   let grenadeSeq = 1;
+  let secondThrowIn: number | null = null;
+
+  /** Grenade level 2: a land mine just in front of our feet (online, others see it too). */
+  const plantMine = () => {
+    if (mines.own >= MAX_MINES) {
+      thrower.count++; // nothing planted, charge back
+      hud.notice(t('mineLimit', { n: MAX_MINES }));
+      return;
+    }
+    const f = playerFeet(new THREE.Vector3());
+    const at = mines.groundAt(f.addScaledVector(new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw)), 0.6));
+    const id = grenadeSeq++;
+    mines.place(id, null, at);
+    sfx.minePlant();
+    conn?.send({ t: 'grenade', id, p: vec3(at), v: [0, 0, 0], fuse: 0, mine: true });
+  };
 
   /** Distance from `from` to the closest of `samples` with a clear line (walls block the blast), or null. */
   const blastDistance = (from: THREE.Vector3, samples: THREE.Vector3[]): number | null => {
@@ -479,7 +541,8 @@ async function boot() {
       effects.burst('confetti', tmp.copy(p).setY(p.y + 1.1), UP, 6);
       if (res.killed) {
         anyKill = true;
-        onKill(d, res, t('grenadeName'), 'grenade');
+        onKill(d, res, levelInfo('granada', progress.equipped('granada')).nome, 'grenade');
+        gainXp('granada', SCORE.kill);
       }
     }
     for (const b of bots?.bots ?? []) {
@@ -556,7 +619,9 @@ async function boot() {
   };
 
   // --- Bots ----------------------------------------------------------------------------------------
-  const weaponNameFor = (kind: KillKind) => (kind === 'knife' ? t('knifeName') : kind === 'grenade' || kind === 'explosion' ? t('grenadeName') : weapon.data.nome);
+  /** Name of the weapon behind a kill, at the killer's levels (bots use the starting ones). */
+  const weaponNameFor = (kind: KillKind, lo: Loadout = DEFAULT_LOADOUT) =>
+    kind === 'knife' ? knifeData(lo.faca).nome : kind === 'grenade' || kind === 'explosion' ? levelInfo('granada', lo.granada).nome : rifleData(lo.rifle).nome;
   if (botMode && nav) {
     bots = new BotManager({
       physics,
@@ -581,9 +646,11 @@ async function boot() {
         },
         kill: (victim, killer, kind, awards, corpse) => {
           const victimName = victim === playerTarget ? t('you') : victim.name;
-          if (killer) hud.killfeed(killer === playerTarget ? t('you') : killer.name, weaponNameFor(kind), victimName, KIND_ICON[kind]);
+          const killerLoadout = killer === playerTarget ? progress.loadout : DEFAULT_LOADOUT;
+          if (killer) hud.killfeed(killer === playerTarget ? t('you') : killer.name, weaponNameFor(kind, killerLoadout), victimName, KIND_ICON[kind]);
           else if (kind === 'dog') hud.killfeed('Amora', t('dogBite'), victimName, 'dog');
           else hud.notice(`💀 ${victimName}`);
+          if (killer === playerTarget && victim !== playerTarget) gainXp(weaponOfKill(kind), awards.reduce((sum, a) => sum + a.value, 0));
           if (killer === playerTarget) {
             hud.hit('kill');
             killFx(victim.position);
@@ -593,7 +660,7 @@ async function boot() {
           if (victim === playerTarget) {
             killerId = killer?.id ?? null;
             myCorpseId = corpse.info.id;
-            deathMessage = killer ? t('killedByWith', { name: killer.name, weapon: weaponNameFor(kind) }) : null;
+            deathMessage = killer ? t('killedByWith', { name: killer.name, weapon: weaponNameFor(kind, killerLoadout) }) : null;
           }
         },
         tauntStarted: (dancer, corpse) => {
@@ -634,7 +701,10 @@ async function boot() {
       net.upsertInfo(m.player);
       hud.notice(t('playerJoined', { name: m.player.name }));
     });
+    // A player came back: the mines of their previous life go away.
+    conn.on('spawned', (m) => mines.clearOwner(m.id));
     conn.on('playerLeft', (m) => {
+      mines.clearOwner(m.id);
       const name = net.info.get(m.id)?.name;
       net.remove(m.id);
       if (name) hud.notice(t('playerLeft', { name }));
@@ -653,9 +723,13 @@ async function boot() {
       player.eye(1, eye);
       if (rp && rp.position.distanceTo(eye) < 12) sfx.knifeSwing();
     });
-    conn.on('grenade', (m) => grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact }));
+    conn.on('grenade', (m) => {
+      if (m.mine) mines.place(m.id, m.owner, new THREE.Vector3(...m.p));
+      else grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact });
+    });
     conn.on('boom', (m) => {
       grenades.removeRemote(`${m.owner}:${m.id}`);
+      mines.remove(m.id, m.owner);
       explosionFx(new THREE.Vector3(...m.p));
     });
     conn.on('damage', (m) => {
@@ -669,11 +743,13 @@ async function boot() {
       m.players.forEach((p) => net.upsertInfo(p));
       net.addCorpse(m.corpse);
       const victimName = m.victim === me ? t('you') : m.corpse.name;
-      const weaponName = m.kind === 'knife' ? t('knifeName') : m.kind === 'grenade' || m.kind === 'explosion' ? t('grenadeName') : weapon.data.nome;
+      const attackerInfo = m.attacker !== null ? net.info.get(m.attacker) : undefined;
+      const weaponName = weaponNameFor(m.kind, m.attacker === me ? progress.loadout : (attackerInfo?.lo ?? DEFAULT_LOADOUT));
       if (m.attacker !== null) hud.killfeed(nameOf(m.attacker), weaponName, victimName, KIND_ICON[m.kind]);
       else if (m.kind === 'dog') hud.killfeed('Amora', t('dogBite'), victimName, 'dog');
       else hud.notice(`💀 ${victimName}`);
       if (m.attacker === me && m.victim !== me) {
+        gainXp(weaponOfKill(m.kind), m.awards.reduce((sum, a) => sum + a.value, 0));
         hud.hit('kill');
         killFx(new THREE.Vector3(...m.corpse.p));
         for (const a of m.awards) hud.popup(t(AWARD_TEXT[a.label]), a.value);
@@ -800,11 +876,29 @@ async function boot() {
         lastBeep = Math.ceil(grenadeData.pavio);
       } else if (gEv?.type === 'throw') {
         throwGrenade(gEv.fuseLeft);
+        if (gEv.double) secondThrowIn = DOUBLE_THROW_GAP; // Dose Dupla: the second one follows
+      } else if (gEv?.type === 'mine') {
+        plantMine();
       } else if (gEv?.type === 'inHand') {
         const at = handPosition(new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw)), new THREE.Vector3());
         const id = grenadeSeq++;
         conn?.send({ t: 'grenade', id, p: vec3(at), v: [0, 0, 0], fuse: 0 });
         explode(at, id);
+      }
+      if (secondThrowIn !== null) {
+        secondThrowIn -= dt;
+        if (secondThrowIn <= 0) {
+          secondThrowIn = null;
+          if (!player.dead) {
+            throwGrenade(0);
+            thrower.throwT = 0;
+          }
+        }
+      }
+      // Our mines: an enemy stepping close sets one off.
+      if (mines.own > 0) {
+        const enemies = net ? net.targets().filter((p) => !p.dead).map((p) => p.position) : [...dummies.list, ...(bots?.bots ?? [])].filter((d) => !d.dead).map((d) => d.position);
+        for (const m of mines.triggered(enemies)) explode(m.position, m.id);
       }
       const fuse = thrower.fuseLeft;
       if (fuse !== null && Math.ceil(fuse) < lastBeep) {
@@ -1057,7 +1151,11 @@ async function boot() {
     }
     cam.updateMatrixWorld();
 
-    viewmodel.root.visible = !player.dead && blend < 0.5;
+    // Magnified scopes: fully aimed, the gun gives way to the scope view.
+    const scopeView = viewmodel.scoped && weapon.ads > 0.85 && !player.dead && blend < 0.5;
+    scopeEl.classList.toggle('hidden', !scopeView);
+    viewmodel.root.visible = !player.dead && blend < 0.5 && !scopeView;
+    mines.update(frameDt);
     viewmodel.update(frameDt, {
       ads: weapon.ads,
       sprint: sprintVis,
@@ -1175,6 +1273,7 @@ async function boot() {
     Object.assign(window, {
       __oc: {
         player, weapon, melee, taunt, thrower, grenades, input, dummies, net, conn, me, ctx, physics, quality, map, effects, bots, nav, RAPIER,
+        mines, progress,
         trace: (o: THREE.Vector3, d: THREE.Vector3) => traceShot(physics, registry, o, d, weapon.data.alcanceMaximo, playerRig?.body, weapon.data.penetracao),
         stats: () => ({ shots, hits, kills, points, lastTtk }),
         perf: () => ({ boot, mapBuildMs, map: map.stats, simMsAvg, renderMsAvg, calls: ctx.renderer.info.render.calls, tris: ctx.renderer.info.render.triangles }),

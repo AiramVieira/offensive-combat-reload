@@ -429,6 +429,53 @@ export class Sfx {
     }
   }
 
+  /** Swing sound of each knife level (the plain knife uses knifeSwing). */
+  meleeSwing(kind: 'faca' | 'madeira' | 'frango' | 'crocante' | 'tapa' | 'boing' | 'sabre') {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    switch (kind) {
+      case 'faca':
+        return this.knifeSwing();
+      case 'madeira': // wooden spoon: hollow knock
+        this.tone(t + 0.08, 'triangle', 520, 300, 0.07, 0.35);
+        return this.noiseBurst(t, 0.1, 'bandpass', 700, 1.5, 0.15);
+      case 'frango': // rubber chicken: the classic squeal
+        this.tone(t, 'square', 700, 1500, 0.09, 0.12, 'sfx', 0.004);
+        this.tone(t + 0.09, 'square', 1500, 900, 0.22, 0.1, 'sfx', 0.004);
+        this.tone(t + 0.09, 'sawtooth', 1480, 880, 0.22, 0.05, 'sfx', 0.004);
+        return;
+      case 'crocante': // stale baguette: crunch
+        this.noiseBurst(t + 0.08, 0.05, 'highpass', 2500, 1, 0.45);
+        this.noiseBurst(t + 0.13, 0.04, 'highpass', 3200, 1, 0.3);
+        return this.noiseBurst(t, 0.12, 'bandpass', 900, 1, 0.12);
+      case 'tapa': // frozen fish: wet slap
+        this.noiseBurst(t + 0.09, 0.07, 'lowpass', 1400, 1, 0.6);
+        return this.tone(t + 0.09, 'sine', 220, 90, 0.1, 0.3);
+      case 'boing':
+        return this.boing();
+      case 'sabre': // knock-off lightsaber: "vuuum"
+        this.tone(t, 'sawtooth', 110, 160, 0.32, 0.14, 'sfx', 0.02);
+        this.tone(t, 'sawtooth', 113, 150, 0.32, 0.1, 'sfx', 0.02);
+        return this.noiseBurst(t, 0.3, 'bandpass', 400, 3, 0.08);
+    }
+  }
+
+  /** New weapon level: short fanfare. */
+  levelUp() {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => this.tone(t + i * 0.09, 'square', f, f, i === 3 ? 0.35 : 0.1, 0.1, 'ui', 0.004));
+    this.tone(t + 0.27, 'triangle', 1568, 1568, 0.4, 0.08, 'ui', 0.004);
+  }
+
+  /** Planting a land mine: a metallic clack and a beep. */
+  minePlant() {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(t, 0.05, 'bandpass', 2400, 2, 0.35);
+    this.tone(t + 0.12, 'sine', 1800, 1800, 0.06, 0.12, 'sfx', 0.002);
+  }
+
   /** Amora's bite: a short growl and a snap of the jaws. */
   bite() {
     if (!this.ready) return;

@@ -488,7 +488,7 @@ body {
 }
 
 .menu-card {
-  width: min(760px, 100%);
+  width: min(880px, 100%);
   max-height: calc(100vh - 32px);
   overflow: auto;
   padding: 22px 28px;
@@ -524,6 +524,155 @@ body {
   opacity: 0.65;
   font-size: 13px;
 }
+/* --- Arsenal (weapon progression) in the menu ------------------------------------------------------- */
+.arsenal {
+  margin-top: 16px;
+  text-align: left;
+}
+.arsenal h3 {
+  margin-bottom: 2px;
+}
+.arsenal .hint {
+  margin: 0 0 10px;
+}
+.arsenal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  .arsenal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.arsenal-card {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: #fff;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.arsenal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.arsenal-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+.arsenal-weapon {
+  font-weight: 900;
+  font-size: 12px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.arsenal-name {
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1.05;
+}
+.xp-bar {
+  height: 10px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: #eee7da;
+  overflow: hidden;
+}
+.xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffb13d, #ff7a1a);
+}
+.xp-text {
+  font-size: 12px;
+  font-weight: 800;
+}
+.level-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.level-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  background: #fff8ec;
+  font: 900 12px var(--body);
+  color: var(--ink);
+  cursor: pointer;
+}
+.level-chip .chip-icon {
+  font-size: 15px;
+}
+.level-chip.locked {
+  background: #e9e4dc;
+  opacity: 0.55;
+  cursor: default;
+}
+.level-chip.equipped {
+  background: var(--team-a);
+  color: #fff;
+  box-shadow: 0 2px 0 var(--ink);
+}
+.level-chip.unlocked:not(.equipped):hover {
+  background: #ffe2b8;
+}
+.level-detail {
+  font-size: 12.5px;
+  line-height: 1.35;
+  min-height: 52px;
+}
+.detail-status {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: var(--team-a);
+}
+
+/* --- Scope overlay --------------------------------------------------------------------------------- */
+#scope {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, transparent 0 min(40vh, 40vw), rgba(0, 0, 0, 0.35) calc(min(40vh, 40vw) + 1px), #07070a calc(min(40vh, 40vw) + 6px));
+  z-index: 4;
+}
+#scope .scope-h,
+#scope .scope-v {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.85);
+}
+#scope .scope-h {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+#scope .scope-v {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+#scope .scope-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff2d2d;
+  transform: translate(-50%, -50%);
+}
+
 .menu-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -601,6 +750,13 @@ input[type='range'] {
 }
 #banner.taunt {
   color: #ff6fb5;
+}
+#banner.level {
+  color: #7fe0ff;
+  font-size: clamp(24px, 3.6vw, 46px);
+  white-space: normal;
+  width: min(92vw, 1100px);
+  text-align: center;
 }
 #banner.show {
   animation: banner 1.8s ease-out forwards;

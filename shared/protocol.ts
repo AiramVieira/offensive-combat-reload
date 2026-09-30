@@ -3,6 +3,7 @@
 // the game code.
 import type { HitRegion } from './weapons';
 import { HUMILIATION } from './constants';
+import type { Loadout } from './progression';
 
 export const NET = {
   /** Server simulation/broadcast rate. */
@@ -63,6 +64,8 @@ export interface PlayerInfo {
   id: number;
   name: string;
   sex: Sex;
+  /** Equipped level of each weapon (for weapon names in the kill feed). */
+  lo?: Loadout;
   kills: number;
   deaths: number;
   score: number;
@@ -103,7 +106,9 @@ export type ClientMsg =
   | { t: 'swing' }
   | { t: 'stab'; target: number; behind: boolean }
   /** impact: explodes on its first contact instead of by fuse (fuse is then the flight time limit). */
-  | { t: 'grenade'; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean }
+  | { t: 'grenade'; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean; mine?: boolean }
+  /** Equipped weapon levels (progression is stored by the client; the server applies the levels' stats). */
+  | { t: 'loadout'; lo: Loadout }
   | { t: 'boom'; id: number; p: Vec3; hits: { target: number; dist: number }[] }
   | { t: 'selfDamage'; amount: number; cause: 'fall' | 'void' | 'dog' }
   | { t: 'taunt'; corpse: number }
@@ -128,7 +133,7 @@ export type ServerMsg =
   | { t: 'damage'; target: number; attacker: number | null; amount: number; health: number; from: Vec3 | null }
   | { t: 'kill'; victim: number; attacker: number | null; kind: KillKind; awards: Award[]; corpse: CorpseInfo; players: PlayerInfo[] }
   | { t: 'spawned'; id: number; p: Vec3; yaw: number }
-  | { t: 'grenade'; owner: number; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean }
+  | { t: 'grenade'; owner: number; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean; mine?: boolean }
   | { t: 'boom'; owner: number; id: number; p: Vec3 }
   | { t: 'taunt'; id: number; corpse: number }
   | { t: 'tauntEnd'; id: number; corpse: number; done: boolean; awards: Award[]; players: PlayerInfo[] }
