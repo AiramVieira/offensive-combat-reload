@@ -519,20 +519,28 @@ async function boot() {
     return out.copy(eye).addScaledVector(d, hit ? Math.max(0, hit.timeOfImpact - 0.1) : len);
   };
 
-  /** Throws one of our grenades; the id travels with the projectile and is reported with its explosion. */
-  const launch = (origin: THREE.Vector3, vel: THREE.Vector3, fuse: number) => {
+  /**
+   * Throws one of our grenades; the id travels with the projectile and is reported with its explosion.
+   * `impact`: goes off on first contact (thrown); otherwise by `fuse` (dropped while cooking).
+   */
+  const launch = (origin: THREE.Vector3, vel: THREE.Vector3, fuse: number, impact = false) => {
     const id = grenadeSeq++;
-    grenades.spawn(origin, vel, fuse, undefined, id);
-    conn?.send({ t: 'grenade', id, p: vec3(origin), v: vec3(vel), fuse: +fuse.toFixed(3) });
+    const limit = impact ? grenadeData.tempoMaximoVoo : fuse;
+    grenades.spawn(origin, vel, limit, undefined, id, { impact, ignore: playerRig?.body });
+    conn?.send({ t: 'grenade', id, p: vec3(origin), v: vec3(vel), fuse: +limit.toFixed(3), ...(impact ? { impact } : {}) });
   };
 
   const throwGrenade = (fuseLeft: number) => {
     const p = player.pitch + (grenadeData.anguloExtraGraus * Math.PI) / 180;
     const dir = new THREE.Vector3(-Math.sin(player.yaw) * Math.cos(p), Math.sin(p), -Math.cos(player.yaw) * Math.cos(p));
     const origin = handPosition(dir, new THREE.Vector3());
-    // Inherit part of the player's run so throws on the move feel right.
-    const vel = dir.multiplyScalar(grenadeData.velocidadeLancamento).add(new THREE.Vector3(player.move.vel.x * 0.6, 0, player.move.vel.z * 0.6));
-    launch(origin, vel, fuseLeft);
+    // Jump + throw (in the air, or jump pressed on the same tick) throws farther.
+    const jumping = !player.move.grounded || input.down('jump');
+    const speed = grenadeData.velocidadeLancamento * (jumping ? grenadeData.bonusPulo : 1);
+    // Inherit part of the player's run (and of the jump's lift) so throws on the move feel right.
+    const vel = dir.multiplyScalar(speed).add(new THREE.Vector3(player.move.vel.x * 0.6, jumping ? Math.max(0, player.move.vel.y) * 0.5 : 0, player.move.vel.z * 0.6));
+    // Once thrown the fuse no longer matters: it goes off on contact.
+    launch(origin, vel, fuseLeft, grenadeData.impacto);
     sfx.grenadeThrow();
   };
 
@@ -645,7 +653,7 @@ async function boot() {
       player.eye(1, eye);
       if (rp && rp.position.distanceTo(eye) < 12) sfx.knifeSwing();
     });
-    conn.on('grenade', (m) => grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`));
+    conn.on('grenade', (m) => grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact }));
     conn.on('boom', (m) => {
       grenades.removeRemote(`${m.owner}:${m.id}`);
       explosionFx(new THREE.Vector3(...m.p));

@@ -313,7 +313,7 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
     scene.add(board);
   };
   sign(['VENDE-SE', 'Vizinho barulhento', 'incluso no preço'], 22.6, -12.4, 0, '#fff8ec', '#c0271b');
-  sign(['CUIDADO', 'Cão bravo', '(e muito fofo)'], 33.6, 12.4, 0, '#ffd23f', '#1b1530', 2.1);
+  sign(['CUIDADO', 'Cão bravo', '(e muito fofo)'], 33.4, 16.6, 0, '#ffd23f', '#1b1530', 2.1);
   sign(['RUA DOS', 'VIZINHOS', 'Proibido estacionar tanque'], -38.6, -9.3, -Math.PI / 2, '#2f7d3a', '#ffffff', 2.4);
 
   // Clouds drifting across the sky: one instanced mesh.
@@ -367,16 +367,16 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
   try {
     const gltf = await gltfLoader(renderer).loadAsync('/models/casinha_cachorro.glb');
     const house = { x: 36, z: 14.5, scale: 1.6 };
-    const markers = addGltfToMap(gltf, b, { position: new THREE.Vector3(house.x, 0, house.z), yaw: 0, scale: house.scale });
-    // The doghouse faces -Z; its door wall is 0.7 m (model units) in front of the center.
-    const doorZ = house.z - 0.7 * house.scale;
+    // The model's door faces -Z; turned around so the entrance opens into the yard (+Z), in plain view.
+    const markers = addGltfToMap(gltf, b, { position: new THREE.Vector3(house.x, 0, house.z), yaw: Math.PI, scale: house.scale });
+    // The door wall is 0.7 m (model units) from the center.
+    const doorZ = house.z + 0.7 * house.scale;
     const plate = namePlate('Amora', 0.44 * house.scale, 0.14 * house.scale);
-    plate.rotation.y = Math.PI;
-    plate.position.set(house.x, (0.66 + 0.07) * house.scale, doorZ - 0.02 * house.scale - 0.004);
+    plate.position.set(house.x, (0.66 + 0.07) * house.scale, doorZ + 0.02 * house.scale + 0.004);
     scene.add(plate);
-    // Bite zone: the strip between the yard fence (z = 11) and her door, a bit wider than the house.
-    const zone = new THREE.Box3(new THREE.Vector3(house.x - 1.35, -0.5, 11.05), new THREE.Vector3(house.x + 1.35, 1.2, doorZ + 0.05));
-    dog = new ChowChow(scene, physics, new THREE.Vector3(house.x, 0, doorZ - 0.45), 0, zone, sfx);
+    // Bite zone: the strip in front of her door, a bit wider than the house and ~2.3 m deep.
+    const zone = new THREE.Box3(new THREE.Vector3(house.x - 1.35, -0.5, doorZ - 0.05), new THREE.Vector3(house.x + 1.35, 1.2, doorZ + 2.3));
+    dog = new ChowChow(scene, physics, new THREE.Vector3(house.x, 0, doorZ + 0.45), Math.PI, zone, sfx);
     for (const gag of markers.gags) {
       if (gag.name !== 'LATIDO') continue;
       let cooldown = 0;

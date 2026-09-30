@@ -10,6 +10,9 @@ import type { Physics } from '../world/physics';
 
 // Grenades bounce off the map and off characters' blockers, never off the player (who would shove them).
 const PROJECTILE_GROUPS = groups(GROUP.PROJECTILE, GROUP.WORLD | GROUP.BLOCKER);
+// What sets off an impact grenade: the map, characters' blockers and their hitboxes.
+const IMPACT_GROUPS = groups(GROUP.PROJECTILE, GROUP.WORLD | GROUP.BLOCKER | GROUP.HITBOX);
+const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 
 export type ThrowerEvent =
   | { type: 'pin' }
@@ -114,6 +117,11 @@ export class GrenadeThrower {
 
 interface Live {
   body: RAPIER.RigidBody;
+  collider: RAPIER.Collider;
+  /** Explodes on first contact (thrown); false = by fuse (a cooked grenade dropped on death). */
+  impact: boolean;
+  /** The thrower's own hitbox body: touching yourself doesn't set it off. */
+  ignore?: RAPIER.RigidBody;
   mesh: THREE.Object3D;
   fuse: number;
   prev: THREE.Vector3;
@@ -132,13 +140,25 @@ export interface Explosion {
   id: number;
 }
 
+export interface SpawnOpts {
+  impact?: boolean;
+  ignore?: RAPIER.RigidBody;
+}
+
 export class GrenadeProjectiles {
   readonly live: Live[] = [];
   private tmpV = new THREE.Vector3();
+  private probe: RAPIER.Ball;
 
-  constructor(private physics: Physics, private scene: THREE.Scene, private data: GrenadeData, private onBounce: (strength: number) => void) {}
+  constructor(private physics: Physics, private scene: THREE.Scene, private data: GrenadeData, private onBounce: (strength: number) => void) {
+    this.probe = new RAPIER.Ball(data.raio);
+  }
 
-  spawn(position: THREE.Vector3, velocity: THREE.Vector3, fuseLeft: number, remote?: string, id = 0) {
+  /**
+   * `fuseLeft`: seconds to the explosion, or for impact grenades the flight time limit. Remote grenades are
+   * visual only (their owner reports the explosion).
+   */
+  spawn(position: THREE.Vector3, velocity: THREE.Vector3, fuseLeft: number, remote?: string, id = 0, opts: SpawnOpts = {}) {
     const d = this.data;
     const body = this.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
@@ -150,7 +170,7 @@ export class GrenadeProjectiles {
         // Fast and small: continuous collision so it can't tunnel through 15 cm fences.
         .setCcdEnabled(true),
     );
-    this.physics.world.createCollider(
+    const collider = this.physics.world.createCollider(
       RAPIER.ColliderDesc.ball(d.raio).setRestitution(d.quique).setFriction(d.atrito).setDensity(900).setCollisionGroups(PROJECTILE_GROUPS),
       body,
     );
@@ -160,6 +180,9 @@ export class GrenadeProjectiles {
     this.scene.add(mesh);
     this.live.push({
       body,
+      collider,
+      impact: !!opts.impact,
+      ignore: opts.ignore,
       mesh,
       fuse: fuseLeft,
       prev: position.clone(),
@@ -185,7 +208,7 @@ export class GrenadeProjectiles {
     this.live.splice(i, 1);
   }
 
-  /** Call after world.step(). Returns grenades whose fuse ran out this tick. */
+  /** Call once per tick, before world.step(). Returns grenades that went off (impact or fuse) this tick. */
   fixedUpdate(dt: number): Explosion[] {
     const out: Explosion[] = [];
     for (let i = this.live.length - 1; i >= 0; i--) {
@@ -206,8 +229,23 @@ export class GrenadeProjectiles {
       if (g.remote) {
         // Safety net in case the owner's explosion message never arrives.
         if (g.fuse < -2) this.destroy(i);
-      } else if (g.fuse <= 0) {
-        out.push({ position: g.curr.clone(), id: g.id });
+        continue;
+      }
+      if (g.curr.y < -30) {
+        this.destroy(i); // fell out of the map
+        continue;
+      }
+      let at: THREE.Vector3 | null = null;
+      if (g.impact) {
+        // Sweep the ball along this tick's motion: touching anything (or already touching) sets it off
+        // right there. A sudden change of velocity (it bounced during the last step) also counts.
+        const hit = this.physics.world.castShape(t, IDENTITY, v, this.probe, 0, dt * 1.05, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, IMPACT_GROUPS, g.collider, g.ignore);
+        if (hit) at = g.curr.clone().addScaledVector(this.tmpV.set(v.x, v.y, v.z), hit.time_of_impact);
+        else if (dv > 3) at = g.curr.clone();
+        else if (g.fuse <= 0) at = g.curr.clone();
+      } else if (g.fuse <= 0) at = g.curr.clone();
+      if (at) {
+        out.push({ position: at, id: g.id });
         this.destroy(i);
       }
     }

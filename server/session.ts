@@ -47,7 +47,7 @@ interface SPlayer {
   lastStab: number;
   lastShotRelay: number;
   lastProp: number;
-  grenades: Map<number, { thrownAt: number; fuse: number }>;
+  grenades: Map<number, { thrownAt: number; fuse: number; impact: boolean; origin: Vec3; speed: number }>;
   dance: { corpse: number; since: number } | null;
 }
 
@@ -195,9 +195,11 @@ export class Session {
       case 'grenade': {
         if (!p.alive || !finite(msg.id) || !vec(msg.p) || !vec(msg.v) || !finite(msg.fuse)) return;
         if (p.grenades.size >= 4 || p.grenades.has(msg.id)) return;
-        const fuse = Math.max(0, Math.min(GRENADE.pavio, msg.fuse));
-        p.grenades.set(msg.id, { thrownAt: now, fuse });
-        this.broadcast({ t: 'grenade', owner: p.id, id: msg.id, p: msg.p, v: msg.v, fuse }, p.id);
+        const impact = !!msg.impact && GRENADE.impacto;
+        const fuse = Math.max(0, Math.min(impact ? GRENADE.tempoMaximoVoo : GRENADE.pavio, msg.fuse));
+        const speed = Math.hypot(msg.v[0], msg.v[1], msg.v[2]);
+        p.grenades.set(msg.id, { thrownAt: now, fuse, impact, origin: msg.p, speed });
+        this.broadcast({ t: 'grenade', owner: p.id, id: msg.id, p: msg.p, v: msg.v, fuse, impact }, p.id);
         return;
       }
       case 'boom':
@@ -263,8 +265,13 @@ export class Session {
   private onBoom(p: SPlayer, msg: Extract<ClientMsg, { t: 'boom' }>, now: number) {
     const g = p.grenades.get(msg.id);
     if (!g || !vec(msg.p) || !Array.isArray(msg.hits)) return;
-    // Can't explode much earlier than its fuse allows.
-    if (now - g.thrownAt < g.fuse * 1000 - 500) return;
+    const t = (now - g.thrownAt) / 1000;
+    if (g.impact) {
+      // Impact grenades go off whenever they touch something: the blast must be somewhere the throw
+      // could have reached by now (speed, gravity, latency slack), within the flight time limit.
+      const reach = g.speed * t + 4.9 * t * t + 3;
+      if (t > g.fuse + 1 || dist3(g.origin, msg.p) > reach) return;
+    } else if (t < g.fuse - 0.5) return; // can't explode much earlier than its fuse allows
     p.grenades.delete(msg.id);
     this.broadcast({ t: 'boom', owner: p.id, id: msg.id, p: msg.p }, p.id);
     const seen = new Set<number>();

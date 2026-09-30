@@ -108,6 +108,15 @@ export interface GrenadeData {
   /** A tap still plays the pin-pull animation for at least this long before the throw. */
   tempoMinimoPuxar: number;
   velocidadeLancamento: number;
+  /** Throw speed multiplier when thrown in the air (jump + throw goes farther). */
+  bonusPulo: number;
+  /**
+   * true = once thrown, the fuse no longer matters: it goes off on the first contact with anything (floor,
+   * wall, a character's hitbox). The fuse still runs while cooking in the hand.
+   */
+  impacto: boolean;
+  /** Impact grenades that never touch anything (thrown out of the map) go off after this many seconds. */
+  tempoMaximoVoo: number;
   /** Throws aim slightly above the crosshair so a level throw arcs naturally. */
   anguloExtraGraus: number;
   intervalo: number;

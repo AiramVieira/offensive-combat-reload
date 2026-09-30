@@ -102,7 +102,8 @@ export type ClientMsg =
   | { t: 'hit'; target: number; region: HitRegion; dist: number; keep?: number }
   | { t: 'swing' }
   | { t: 'stab'; target: number; behind: boolean }
-  | { t: 'grenade'; id: number; p: Vec3; v: Vec3; fuse: number }
+  /** impact: explodes on its first contact instead of by fuse (fuse is then the flight time limit). */
+  | { t: 'grenade'; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean }
   | { t: 'boom'; id: number; p: Vec3; hits: { target: number; dist: number }[] }
   | { t: 'selfDamage'; amount: number; cause: 'fall' | 'void' | 'dog' }
   | { t: 'taunt'; corpse: number }
@@ -127,7 +128,7 @@ export type ServerMsg =
   | { t: 'damage'; target: number; attacker: number | null; amount: number; health: number; from: Vec3 | null }
   | { t: 'kill'; victim: number; attacker: number | null; kind: KillKind; awards: Award[]; corpse: CorpseInfo; players: PlayerInfo[] }
   | { t: 'spawned'; id: number; p: Vec3; yaw: number }
-  | { t: 'grenade'; owner: number; id: number; p: Vec3; v: Vec3; fuse: number }
+  | { t: 'grenade'; owner: number; id: number; p: Vec3; v: Vec3; fuse: number; impact?: boolean }
   | { t: 'boom'; owner: number; id: number; p: Vec3 }
   | { t: 'taunt'; id: number; corpse: number }
   | { t: 'tauntEnd'; id: number; corpse: number; done: boolean; awards: Award[]; players: PlayerInfo[] }
