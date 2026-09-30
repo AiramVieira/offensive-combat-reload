@@ -8,7 +8,7 @@ import { pickSafeSpawn } from './gameplay/spawnPicker';
 import { GROUP, groups, HEALTH, HUMILIATION, MOVE, SCORE } from '@shared/constants';
 import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, idealTtk, LETHAL_DAMAGE, type HitRegion } from '@shared/weapons';
 import { eyeHeight, type MoveInput } from '@shared/movement';
-import { FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
+import { CLOSE, FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
 import { startLoop } from './core/loop';
 import { Input } from './core/input';
 import { loadSettings, saveSettings } from './core/settings';
@@ -40,11 +40,11 @@ import { Corpse } from './gameplay/corpse';
 import { Sfx } from './audio/sfx';
 import { Hud, type FeedIcon } from './ui/hud';
 import { Screens } from './ui/menu';
-import { showHome } from './ui/home';
+import { closeReason, showHome } from './ui/home';
 import { Progress } from './gameplay/progress';
 import { MAX_MINES, Mines } from './weapons/mines';
 import { Arsenal } from './ui/arsenal';
-import { DEFAULT_LOADOUT, knifeData, levelInfo, rifleData, weaponOfKill, type KnifeSound, type Loadout, type ProgWeapon } from '@shared/progression';
+import { DEFAULT_LOADOUT, knifeData, levelInfo, rifleData, type KnifeSound, type Loadout, type ProgWeapon } from '@shared/progression';
 import { Scoreboard } from './ui/scoreboard';
 import { DEATH_MESSAGES, getLang, pick, t, type StringKey } from './ui/strings';
 
@@ -103,8 +103,8 @@ async function boot() {
   const net = online ? new RemoteWorld(physics.world, ctx.scene, registry, conn!, me) : null;
   const effects = new Effects(ctx.scene);
   const viewmodel = new Viewmodel(ctx.vmScene);
-  // Saved weapon progression (localStorage) and our land mines (grenade level 2).
-  const progress = new Progress();
+  // Weapon progression from the account (level 1 without one) and our land mines (grenade level 2).
+  const progress = new Progress(choice.account);
   const mines = new Mines(physics, ctx.scene);
   const player = new LocalPlayer(physics, map.killY);
   player.netControlled = !!online;
@@ -301,7 +301,6 @@ async function boot() {
         sfx.hitmarker(res.headshot || groin);
         hud.hit(res.killed ? 'kill' : res.headshot ? 'head' : 'hit');
         if (res.killed) {
-          const p0 = points;
           onKill(dummy, res, weapon.data.nome, groin ? 'bird' : res.headshot ? 'head' : null);
           if (res.headshot) award(t('headshot'), SCORE.headshot);
           if (groin) {
@@ -309,7 +308,6 @@ async function boot() {
             groinFx(hit.point);
           }
           if (hit.distance > SCORE.longShotDistance) award(t('longShot'), SCORE.longShot);
-          gainXp('rifle', points - p0);
         }
       } else {
         effects.decal(hit.point, hit.normal);
@@ -344,15 +342,18 @@ async function boot() {
     viewmodel.setGrenadeKind(g.tipo);
     conn?.send({ t: 'loadout', lo: progress.loadout });
   };
-  const gainXp = (w: ProgWeapon | null, pts: number) => {
-    if (!w || pts <= 0) return;
-    const up = progress.addKill(w, pts);
-    if (!up) return;
-    const info = levelInfo(up.weapon, up.level);
-    hud.showBanner(`${info.icone} ${t('levelUp', { weapon: t(WEAPON_LABEL[up.weapon]), level: up.level })}: ${info.nome}!`, 'level');
-    sfx.levelUp();
+  // Points only come from the server (online kills, humiliations, time alive): it pushes the new progress.
+  conn?.on('progresso', (m) => {
+    progress.applyServer(m.armas);
     applyLoadout();
-  };
+    if (!m.subiu) return;
+    if (m.subiu.tipo === 'conta') hud.showBanner(t('accountLevelUp', { level: m.subiu.nivel }), 'level');
+    else {
+      const info = levelInfo(m.subiu.tipo, m.subiu.nivel);
+      hud.showBanner(`${info.icone} ${t('levelUp', { weapon: t(WEAPON_LABEL[m.subiu.tipo]), level: m.subiu.nivel })}: ${info.nome}!`, 'level');
+    }
+    sfx.levelUp();
+  });
   new Arsenal(progress, () => applyLoadout());
   applyLoadout();
   const scopeEl = document.getElementById('scope')!;
@@ -394,11 +395,9 @@ async function boot() {
     if (res.damage <= 0) return;
     hud.hit(res.killed ? 'kill' : 'hit');
     if (res.killed) {
-      const p0 = points;
       onKill(dummy, res, melee.data.nome, 'knife');
       award(t('knife'), SCORE.knife);
       if (behind) award(t('backstab'), SCORE.backstab);
-      gainXp('faca', points - p0);
     }
   };
 
@@ -542,7 +541,6 @@ async function boot() {
       if (res.killed) {
         anyKill = true;
         onKill(d, res, levelInfo('granada', progress.equipped('granada')).nome, 'grenade');
-        gainXp('granada', SCORE.kill);
       }
     }
     for (const b of bots?.bots ?? []) {
@@ -650,7 +648,6 @@ async function boot() {
           if (killer) hud.killfeed(killer === playerTarget ? t('you') : killer.name, weaponNameFor(kind, killerLoadout), victimName, KIND_ICON[kind]);
           else if (kind === 'dog') hud.killfeed('Amora', t('dogBite'), victimName, 'dog');
           else hud.notice(`💀 ${victimName}`);
-          if (killer === playerTarget && victim !== playerTarget) gainXp(weaponOfKill(kind), awards.reduce((sum, a) => sum + a.value, 0));
           if (killer === playerTarget) {
             hud.hit('kill');
             killFx(victim.position);
@@ -749,7 +746,6 @@ async function boot() {
       else if (m.kind === 'dog') hud.killfeed('Amora', t('dogBite'), victimName, 'dog');
       else hud.notice(`💀 ${victimName}`);
       if (m.attacker === me && m.victim !== me) {
-        gainXp(weaponOfKill(m.kind), m.awards.reduce((sum, a) => sum + a.value, 0));
         hud.hit('kill');
         killFx(new THREE.Vector3(...m.corpse.p));
         for (const a of m.awards) hud.popup(t(AWARD_TEXT[a.label]), a.value);
@@ -790,7 +786,7 @@ async function boot() {
     });
     conn.on('prop', (m) => map.props.remote(m.id));
     map.props.onLocal = (id) => conn.send({ t: 'prop', id });
-    conn.onClose = () => hud.setNetStatus(t('lostConnection'));
+    conn.onClose = (code) => hud.setNetStatus(code === CLOSE.revoked || code === CLOSE.replaced ? closeReason(code) : t('lostConnection'));
   }
 
   // --- Menus and pointer lock ---------------------------------------------------------------------

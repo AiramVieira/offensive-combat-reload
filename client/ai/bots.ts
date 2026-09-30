@@ -106,7 +106,7 @@ export class BotManager {
   private score(c: Combatant): PlayerInfo {
     let s = this.scores.get(c.id);
     if (!s) {
-      s = { id: c.id, name: c.name, sex: c.sex, kills: 0, deaths: 0, score: 0, humiliations: 0, alive: !c.dead, ping: 0 };
+      s = { id: c.id, name: c.name, nivel: 0, sex: c.sex, kills: 0, deaths: 0, score: 0, humiliations: 0, alive: !c.dead, ping: 0 };
       this.scores.set(c.id, s);
     }
     return s;

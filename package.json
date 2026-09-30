@@ -12,11 +12,18 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server",
     "exemplos:glb": "node tools/gerar-props-exemplo.mjs",
-    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --tsconfig=server/tsconfig.json --outfile=build/server.mjs",
-    "start:dev": "tsx server/index.ts"
+    "build:server": "esbuild server/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --tsconfig=server/tsconfig.json --outfile=build/server.mjs && esbuild tools/admin.ts --bundle --platform=node --format=esm --target=node22 --packages=external --tsconfig=server/tsconfig.json --outfile=build/admin.mjs",
+    "start:dev": "tsx server/index.ts",
+    "admin": "tsx tools/admin.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
+    "@node-rs/argon2": "^2.2.1",
+    "arctic": "^3.7.0",
+    "ioredis": "^6.0.0",
+    "nodemailer": "^10.0.13",
+    "pg": "^8.23.1",
     "recast-navigation": "^0.43.1",
     "three": "^0.186.1",
     "ws": "^8.22.0"
@@ -24,11 +31,14 @@
   "devDependencies": {
     "@gltf-transform/core": "^4.5.1",
     "@types/node": "^26.6.3",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.3"
   }
 }

@@ -2,3 +2,5 @@ node_modules
 dist
 *.log
 build
+airam_memory/
+.env

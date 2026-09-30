@@ -79,12 +79,17 @@
       <h1 class="logo">OFFENSIVE<br /><span>COMBAT</span></h1>
       <div class="home-card sticker">
         <div id="home-start">
-          <label class="home-name"><span id="home-name-label"></span><input id="home-name" type="text" autocomplete="nickname" spellcheck="false" /></label>
-          <div class="home-sex">
-            <span id="home-sex-label"></span>
-            <div class="sex-toggle" role="radiogroup" aria-labelledby="home-sex-label">
-              <button type="button" class="sex-btn" role="radio" data-sex="m"></button>
-              <button type="button" class="sex-btn" role="radio" data-sex="f"></button>
+          <div class="home-account">
+            <div id="home-account-in" class="hidden">
+              <b id="acct-tag"></b><span id="acct-level" class="level-badge"></span>
+              <button id="acct-profile" type="button" class="small-btn"></button>
+            </div>
+            <div id="home-account-out" class="hidden">
+              <p id="acct-guest"></p>
+              <div class="acct-buttons">
+                <button id="acct-login" type="button" class="small-btn"></button>
+                <button id="acct-register" type="button" class="small-btn alt"></button>
+              </div>
             </div>
           </div>
           <div class="home-buttons">
@@ -97,6 +102,8 @@
             <button id="home-offline" class="link-btn"></button>
           </div>
         </div>
+        <div id="home-auth" class="hidden"></div>
+        <div id="home-profile" class="hidden"></div>
         <div id="home-lobby" class="hidden">
           <h3 id="home-lobby-title"></h3>
           <ul id="session-list"></ul>

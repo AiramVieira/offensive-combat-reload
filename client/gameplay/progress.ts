@@ -1,45 +1,28 @@
-// The player's saved progression (localStorage for now): points earned with each weapon, and which
-// unlocked level of each weapon is equipped. Kills feed only the weapon that made them.
-import { DEFAULT_LOADOUT, levelForXp, PROG_WEAPONS, clampLevel, type Loadout, type ProgWeapon } from '@shared/progression';
-
-const KEY = 'oc.profile';
-
-interface SavedProfile {
-  xp: Record<ProgWeapon, number>;
-  equipped: Loadout;
-}
-
-export interface LevelUp {
-  weapon: ProgWeapon;
-  level: number;
-}
+// The player's weapon progression, owned by the account on the server: points only come from online kills
+// the server validated (it sends 'progresso'), and every mode uses the account's equipped levels. Without
+// an account, everything stays at level 1.
+import type { ProfileResponse } from '@shared/account';
+import { DEFAULT_LOADOUT, levelForXp, PROG_WEAPONS, type Loadout, type ProgWeapon } from '@shared/progression';
+import type { ServerMsg } from '@shared/protocol';
+import { api } from '../net/api';
 
 export class Progress {
-  private p: SavedProfile;
+  private xpOf: Record<ProgWeapon, number> = { rifle: 0, faca: 0, granada: 0 };
+  private equippedOf: Loadout = { ...DEFAULT_LOADOUT };
   private listeners = new Set<() => void>();
+  readonly signedIn: boolean;
 
-  constructor() {
-    this.p = { xp: { rifle: 0, faca: 0, granada: 0 }, equipped: { ...DEFAULT_LOADOUT } };
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-      if (raw && typeof raw === 'object') {
-        for (const w of PROG_WEAPONS) {
-          const xp = Number(raw.xp?.[w]);
-          this.p.xp[w] = Number.isFinite(xp) && xp > 0 ? Math.floor(xp) : 0;
-          this.p.equipped[w] = Math.min(clampLevel(w, raw.equipped?.[w]), this.unlocked(w));
-        }
-      }
-    } catch {
-      /* storage unavailable or corrupted: start fresh */
-    }
+  constructor(profile: ProfileResponse | null) {
+    this.signedIn = !!profile;
+    if (profile) for (const w of PROG_WEAPONS) this.set(w, profile.armas[w].xp, profile.armas[w].equipado);
   }
 
-  private save() {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(this.p));
-    } catch {
-      /* storage unavailable */
-    }
+  private set(w: ProgWeapon, xp: number, equipped: number) {
+    this.xpOf[w] = Math.max(0, Math.floor(xp));
+    this.equippedOf[w] = Math.max(1, Math.min(equipped, this.unlocked(w)));
+  }
+
+  private changed() {
     for (const f of this.listeners) f();
   }
 
@@ -48,45 +31,34 @@ export class Progress {
   }
 
   xp(w: ProgWeapon): number {
-    return this.p.xp[w];
+    return this.xpOf[w];
   }
 
   /** Highest level unlocked for `w`. */
   unlocked(w: ProgWeapon): number {
-    return levelForXp(w, this.p.xp[w]);
+    return levelForXp(w, this.xpOf[w]);
   }
 
   equipped(w: ProgWeapon): number {
-    return this.p.equipped[w];
+    return this.equippedOf[w];
   }
 
   get loadout(): Loadout {
-    return { ...this.p.equipped };
+    return { ...this.equippedOf };
   }
 
-  /** Equips an unlocked level (locked ones are ignored). */
+  /** Equips an unlocked level (locked ones are ignored) and saves the choice to the account. */
   equip(w: ProgWeapon, level: number): boolean {
-    if (level < 1 || level > this.unlocked(w) || this.p.equipped[w] === level) return false;
-    this.p.equipped[w] = level;
-    this.save();
+    if (level < 1 || level > this.unlocked(w) || this.equippedOf[w] === level) return false;
+    this.equippedOf[w] = level;
+    if (this.signedIn) api('PATCH', '/api/perfil', { equipado: { [w]: level } }).catch(() => {});
+    this.changed();
     return true;
   }
 
-  /**
-   * Adds a kill's points to the weapon that made it. Returns the new level when it goes up; the new level
-   * is equipped automatically if the player was using their best one.
-   */
-  addKill(w: ProgWeapon, points: number): LevelUp | null {
-    if (points <= 0) return null;
-    const before = this.unlocked(w);
-    this.p.xp[w] += Math.round(points);
-    const after = this.unlocked(w);
-    let up: LevelUp | null = null;
-    if (after > before) {
-      up = { weapon: w, level: after };
-      if (this.p.equipped[w] === before) this.p.equipped[w] = after;
-    }
-    this.save();
-    return up;
+  /** Progress pushed by the game server. */
+  applyServer(armas: Extract<ServerMsg, { t: 'progresso' }>['armas']) {
+    for (const w of PROG_WEAPONS) this.set(w, armas[w].xp, armas[w].equipado);
+    this.changed();
   }
 }
