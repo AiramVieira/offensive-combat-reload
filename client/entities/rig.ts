@@ -3,8 +3,9 @@
 // shots, knives and grenades find it. The character's controller ignores this body (MoveBody.ignoreBody).
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import type { BodyStats } from '@shared/appearance';
 import type { HitboxRegistry, Target } from '../gameplay/targets';
-import { createCharacterColliders } from './hitboxes';
+import { createCharacterColliders, DEFAULT_BODY } from './hitboxes';
 
 const CROUCH_DROP = 0.35;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -16,9 +17,9 @@ export class CharacterRig {
   private enabled = true;
   private q = new THREE.Quaternion();
 
-  constructor(private world: RAPIER.World, entity: Target, registry: HitboxRegistry) {
+  constructor(private world: RAPIER.World, entity: Target, registry: HitboxRegistry, shape: Pick<BodyStats, 'scale' | 'width' | 'missing'> = DEFAULT_BODY) {
     this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -100, 0));
-    const cc = createCharacterColliders(world, this.body, entity, registry);
+    const cc = createCharacterColliders(world, this.body, entity, registry, shape);
     this.colliders = cc.colliders;
     this.debug = cc.debug;
   }

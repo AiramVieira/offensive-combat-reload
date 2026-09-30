@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { cleanName, validName } from '@shared/account';
 import { PROG_WEAPONS, type Loadout } from '@shared/progression';
 import { asSex } from '@shared/protocol';
-import { activeBan, audit, cancelDeletion, changeName, fullProfile, getAccount, me, requestDeletion, setEquipped, setSex } from './accounts';
+import { activeBan, audit, cancelDeletion, changeName, fullProfile, getAccount, me, requestDeletion, setAppearance, setEquipped, setSex } from './accounts';
 import { discordAvailable, discordCallback, startDiscord, unlinkDiscord } from './auth/discord';
 import { login, register, requestReset, resetPassword } from './auth/password';
 import { authenticate, clearSessionCookie, revokeSession, type AuthSession, type Deps } from './auth/sessions';
@@ -106,6 +106,7 @@ const routes: Record<string, Handler> = {
       await changeName(ctx.deps.db, s.accountId, nome, info(ctx.req));
     }
     if (body.sexo !== undefined) await setSex(ctx.deps.db, s.accountId, asSex(body.sexo));
+    if (body.aparencia !== undefined) await setAppearance(ctx.deps.db, s.accountId, body.aparencia);
     if (body.equipado !== undefined) {
       const eq = (body.equipado ?? {}) as Partial<Record<string, unknown>>;
       const lo: Partial<Loadout> = {};

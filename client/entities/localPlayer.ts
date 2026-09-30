@@ -27,6 +27,10 @@ export class LocalPlayer {
   yaw = 0;
   pitch = 0;
   health: number = HEALTH.max;
+  /** From the character's build (heavier bodies have more health). */
+  maxHealth: number = HEALTH.max;
+  /** From the character's height: the eye (and the view) sits higher or lower. */
+  eyeScale = 1;
   dead = false;
   deathAt = 0;
   lastDamageAt = -99;
@@ -60,7 +64,7 @@ export class LocalPlayer {
     this.voidReported = false;
     this.yaw = sp.yaw;
     this.pitch = 0;
-    this.health = HEALTH.max;
+    this.health = this.maxHealth;
     this.dead = false;
     this.snapshotEye();
     this.prevEye.copy(this.currEye);
@@ -123,8 +127,8 @@ export class LocalPlayer {
     }
 
     // Regeneration: 25 HP/s after 4 s without damage (online the server regenerates and syncs it).
-    if (!this.netControlled && this.health < HEALTH.max && time - this.lastDamageAt > HEALTH.regenDelay) {
-      this.health = Math.min(HEALTH.max, this.health + HEALTH.regenPerSecond * dt);
+    if (!this.netControlled && this.health < this.maxHealth && time - this.lastDamageAt > HEALTH.regenDelay) {
+      this.health = Math.min(this.maxHealth, this.health + HEALTH.regenPerSecond * dt);
     }
 
     if (this.pendingDeath && !ev.died) ev.died = this.pendingDeath;
@@ -178,7 +182,7 @@ export class LocalPlayer {
   private snapshotEye(pending = false) {
     const t = pending ? this.mb.body.nextTranslation() : this.mb.body.translation();
     const half = this.move.crouched ? this.mb.collider.halfHeight() : HALF_STAND;
-    this.currEye.set(t.x, t.y - half + eyeHeight(this.move), t.z);
+    this.currEye.set(t.x, t.y - half + eyeHeight(this.move) * this.eyeScale, t.z);
   }
 
   eye(alpha: number, out: THREE.Vector3): THREE.Vector3 {

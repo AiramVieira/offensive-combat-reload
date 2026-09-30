@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { FLAG, NET, type CorpseInfo, type NetState, type PlayerInfo, type Sex } from '@shared/protocol';
 import type { HitRegion } from '@shared/weapons';
-import { Avatar, ENEMY_COLORS } from '../entities/avatar';
+import { bodyStats, defaultAppearance, type Appearance } from '@shared/appearance';
+import { Avatar } from '../entities/avatar';
 import { createCharacterColliders, isBehind, refineRegion } from '../entities/hitboxes';
 import type { HitboxRegistry, Target } from '../gameplay/targets';
 import { Corpse, groundBelow } from '../gameplay/corpse';
@@ -64,19 +65,27 @@ export class RemotePlayer implements Target {
   private danceT: number | null = null;
   private lastPos = new THREE.Vector3();
 
+  /** Height scale of this player's body (hitboxes and groin zone follow it). */
+  private scale: number;
+
   constructor(
     readonly id: number,
     public name: string,
     readonly sex: Sex,
+    look: Appearance,
     private world: RAPIER.World,
     private scene: THREE.Scene,
     registry: HitboxRegistry,
   ) {
-    this.avatar = new Avatar(scene, ENEMY_COLORS, sex);
+    // Everyone appears the way they customized their character.
+    this.avatar = new Avatar(scene, look, sex);
+    const body = bodyStats(look);
+    this.scale = body.scale;
     this.plate = nameplate(name, '#ff8a80');
+    this.plate.position.y *= body.scale;
     this.avatar.root.add(this.plate);
     this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -100, 0));
-    const cc = createCharacterColliders(world, this.body, this, registry);
+    const cc = createCharacterColliders(world, this.body, this, registry, body);
     this.colliders = cc.colliders;
     this.debug = cc.debug;
     this.avatar.root.add(this.debug);
@@ -173,7 +182,7 @@ export class RemotePlayer implements Target {
   }
 
   refineRegion(point: THREE.Vector3, region: HitRegion): HitRegion {
-    return refineRegion(point, region, this.position, this.yaw);
+    return refineRegion(point, region, this.position, this.yaw, this.scale);
   }
 
   isBehind(point: THREE.Vector3): boolean {
@@ -201,10 +210,13 @@ export class RemoteWorld {
   ) {}
 
   upsertInfo(p: PlayerInfo) {
-    this.info.set(p.id, p);
+    // The look only comes when the player appears: keep it across later updates.
+    const ap = p.ap ?? this.info.get(p.id)?.ap;
+    this.info.set(p.id, { ...p, ap });
     if (p.id === this.me) return;
     const rp = this.players.get(p.id);
-    if (!rp) this.players.set(p.id, new RemotePlayer(p.id, p.name, p.sex ?? 'm', this.world, this.scene, this.registry));
+    const sex = p.sex ?? 'm';
+    if (!rp) this.players.set(p.id, new RemotePlayer(p.id, p.name, sex, ap ?? defaultAppearance(sex), this.world, this.scene, this.registry));
   }
 
   remove(id: number) {

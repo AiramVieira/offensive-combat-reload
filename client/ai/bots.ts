@@ -187,7 +187,7 @@ export class BotManager {
     const p = victim.position;
     const yaw = victim instanceof Bot ? victim.yaw : (victim as Combatant & { yaw?: number }).yaw ?? 0;
     const corpse = new Corpse(
-      { id: this.nextCorpse++, victim: victim.id, name: victim.name, sex: victim.sex, p: [p.x, p.y, p.z], yaw, until: this.time + HUMILIATION.window },
+      { id: this.nextCorpse++, victim: victim.id, name: victim.name, sex: victim.sex, ap: victim.look, p: [p.x, p.y, p.z], yaw, until: this.time + HUMILIATION.window },
       this.o.player.id,
       this.o.scene,
       groundBelow(this.o.physics.world, [p.x, p.y, p.z]),
@@ -268,7 +268,7 @@ export class BotManager {
         continue;
       }
       // Same regeneration rule as players.
-      if (b.health < 100 && time - b.lastDamageAt > 4) b.health = Math.min(100, b.health + 25 * dt);
+      if (b.health < b.bodyStats.maxHealth && time - b.lastDamageAt > 4) b.health = Math.min(b.bodyStats.maxHealth, b.health + 25 * dt);
       b.fixedUpdate(dt, this.world);
       if (b.position.y < -20) this.kill(b, null, { kind: 'void' });
     }

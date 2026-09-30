@@ -34,6 +34,8 @@ export class Weapon {
   recoilYaw = 0;
   reloadTimer = 0;
   reloadDuration = 0;
+  /** Reload time multiplier of the body holding it (PCD: no hand or arm reloads slower). */
+  reloadMul = 1;
   reloading = false;
   private reloadEmpty = false;
   private cooldown = 0;
@@ -169,7 +171,7 @@ export class Weapon {
     this.reloading = true;
     this.reloadEmpty = this.mag === 0;
     this.reloadTimer = 0;
-    this.reloadDuration = this.reloadEmpty ? this.data.recarga.vazia : this.data.recarga.tatica;
+    this.reloadDuration = (this.reloadEmpty ? this.data.recarga.vazia : this.data.recarga.tatica) * this.reloadMul;
     this.hooks.reloadStart(this.reloadDuration, this.reloadEmpty);
   }
 }

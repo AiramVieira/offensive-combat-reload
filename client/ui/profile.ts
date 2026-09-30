@@ -3,6 +3,7 @@
 import { NAME_MAX, type ProfileResponse } from '@shared/account';
 import { api, fetchProfile } from '../net/api';
 import { errorText, formatDate } from './auth';
+import { showCustomizer } from './customize';
 import { t, type StringKey } from './strings';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -63,6 +64,7 @@ export async function showProfile(root: HTMLElement, o: Options) {
       <div class="sex-toggle" role="radiogroup">
         ${(['m', 'f'] as const).map((s) => `<button type="button" class="sex-btn" role="radio" data-sex="${s}" aria-checked="${p.sexo === s}">${t(s === 'f' ? 'sexFemale' : 'sexMale')}</button>`).join('')}
       </div>
+      <button id="pf-customize" class="small-btn wide-btn">${t('customize')}</button>
       <h3>${t('statsTitle')}</h3>
       <div class="stat-grid">${stats.map(([k, v]) => `<div><span>${t(k)}</span><b>${v}</b></div>`).join('')}</div>
       <h3>${t('recentTitle')}</h3>
@@ -94,6 +96,8 @@ export async function showProfile(root: HTMLElement, o: Options) {
   const refresh = () => showProfile(root, o);
 
   $('pf-back')!.onclick = () => o.onBack();
+  $('pf-customize')!.onclick = () =>
+    showCustomizer(root, { look: p.aparencia, sex: p.sexo, setStatus: o.setStatus, onClose: () => void showProfile(root, o) });
   root.querySelectorAll<HTMLButtonElement>('.sex-btn').forEach((b) => {
     b.onclick = () => {
       if (b.getAttribute('aria-checked') === 'true') return;

@@ -61,12 +61,13 @@ export class Hud {
     this.weaponName.textContent = name;
   }
 
-  setHealth(h: number) {
+  /** `max`: the body's max health (150 for the heavy build), so the bar is full at full health. */
+  setHealth(h: number, max = 100) {
     const v = Math.ceil(h);
     if (v === this.lastHealth) return;
     this.lastHealth = v;
     this.healthNum.textContent = String(v);
-    this.healthFill.style.width = `${v}%`;
+    this.healthFill.style.width = `${Math.min(100, (v / max) * 100)}%`;
     this.healthBox.classList.toggle('low', v < 25);
     this.vignette.style.setProperty('--low', String(Math.max(0, (30 - v) / 30)));
   }

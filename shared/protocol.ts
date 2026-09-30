@@ -4,6 +4,7 @@
 import type { HitRegion } from './weapons';
 import { HUMILIATION } from './constants';
 import type { Loadout, ProgWeapon } from './progression';
+import type { Appearance } from './appearance';
 
 export const NET = {
   /** Server simulation/broadcast rate. */
@@ -69,6 +70,8 @@ export interface PlayerInfo {
   sex: Sex;
   /** Equipped level of each weapon (for weapon names in the kill feed). */
   lo?: Loadout;
+  /** How the character looks (sent when the player appears: 'joined' and 'playerJoined'). */
+  ap?: Appearance;
   kills: number;
   deaths: number;
   score: number;
@@ -89,6 +92,8 @@ export interface CorpseInfo {
   victim: number;
   name: string;
   sex: Sex;
+  /** The body looks like the player did. */
+  ap?: Appearance;
   p: Vec3;
   yaw: number;
   /** Server time (ms) when the humiliation window closes. */

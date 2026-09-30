@@ -16,7 +16,8 @@ import { GROUP, groups, HEALTH, HUMILIATION, MOVE } from '@shared/constants';
 import { configureController, CONTROLLER_OFFSET, createMoveState, eyeHeight, HALF_STAND, stepMovement, type MoveBody, type MoveInput, type MoveState } from '@shared/movement';
 import { MELEE, WEAPONS, type HitRegion } from '@shared/weapons';
 import type { Sex } from '@shared/protocol';
-import { Avatar, ENEMY_COLORS } from '../entities/avatar';
+import { bodyStats, randomAppearance, type Appearance, type BodyStats } from '@shared/appearance';
+import { Avatar } from '../entities/avatar';
 import { isBehind, refineRegion } from '../entities/hitboxes';
 import { CharacterRig } from '../entities/rig';
 import type { HitboxRegistry, Target } from '../gameplay/targets';
@@ -33,6 +34,8 @@ const DEG = Math.PI / 180;
 export interface Combatant extends Target {
   readonly id: number;
   readonly sex: Sex;
+  /** How the character looks (bodies keep it). */
+  readonly look: Appearance;
   eye(out: THREE.Vector3): THREE.Vector3;
 }
 
@@ -121,6 +124,9 @@ export class Bot implements Combatant {
   readonly rig: CharacterRig;
   readonly mb: MoveBody;
   readonly move: MoveState = createMoveState();
+  /** Every bot gets a random look, with the same game effects as a player's (health, speed, reload). */
+  readonly look: Appearance;
+  readonly bodyStats: BodyStats;
   private avatar: Avatar;
   private plate: THREE.Sprite;
   private prev = new THREE.Vector3();
@@ -169,11 +175,14 @@ export class Bot implements Combatant {
     private scene: THREE.Scene,
     registry: HitboxRegistry,
   ) {
+    this.look = randomAppearance(sex);
+    this.bodyStats = bodyStats(this.look);
+    this.health = this.bodyStats.maxHealth;
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -100, 0));
     const collider = world.createCollider(RAPIER.ColliderDesc.cylinder(HALF_STAND, MOVE.radius).setCollisionGroups(PLAYER_GROUPS), body);
     const controller = world.createCharacterController(CONTROLLER_OFFSET);
     configureController(controller);
-    this.rig = new CharacterRig(world, this, registry);
+    this.rig = new CharacterRig(world, this, registry, this.bodyStats);
     this.mb = { world, body, collider, controller, ignoreBody: this.rig.body };
     this.weapon = new Weapon(WEAPONS.rifle_padrao, {
       shoot: (spread) => this.onShoot?.(spread),
@@ -181,8 +190,10 @@ export class Bot implements Combatant {
       reloadStart: () => {},
       reloadEnd: () => {},
     });
-    this.avatar = new Avatar(scene, ENEMY_COLORS, sex);
+    this.weapon.reloadMul = this.bodyStats.reloadMul;
+    this.avatar = new Avatar(scene, this.look, sex);
     this.plate = nameplate(name);
+    this.plate.position.y *= this.bodyStats.scale;
     this.avatar.root.add(this.plate, this.rig.debug);
   }
 
@@ -198,11 +209,11 @@ export class Bot implements Combatant {
   }
 
   eye(out: THREE.Vector3): THREE.Vector3 {
-    return out.set(this.curr.x, this.curr.y + eyeHeight(this.move), this.curr.z);
+    return out.set(this.curr.x, this.curr.y + eyeHeight(this.move) * this.bodyStats.scale, this.curr.z);
   }
 
   refineRegion(point: THREE.Vector3, region: HitRegion): HitRegion {
-    return refineRegion(point, region, this.curr, this.yaw);
+    return refineRegion(point, region, this.curr, this.yaw, this.bodyStats.scale);
   }
 
   isBehind(point: THREE.Vector3): boolean {
@@ -231,7 +242,7 @@ export class Bot implements Combatant {
     this.prev.copy(this.curr);
     this.yaw = sp.yaw;
     this.pitch = 0;
-    this.health = HEALTH.max;
+    this.health = this.bodyStats.maxHealth;
     this.dead = false;
     this.weapon.refill();
     this.mode = 'roam';
@@ -530,7 +541,7 @@ export class Bot implements Combatant {
       sprint: sprint && this.mode !== 'taunt',
       ads,
       yaw: this.yaw,
-      speedMul: this.weapon.data.movimento,
+      speedMul: this.weapon.data.movimento * this.bodyStats.speedMul,
       lunge: null,
     };
     this.jumpNext = false;

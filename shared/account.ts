@@ -1,4 +1,5 @@
 // Account API shapes and rules shared by the client (forms) and the server (validation).
+import type { Appearance } from './appearance';
 import type { ProgWeapon } from './progression';
 import type { Sex } from './protocol';
 
@@ -64,6 +65,7 @@ export interface ProfileResponse {
   tag: string;
   nome: string;
   sexo: Sex;
+  aparencia: Appearance;
   nivel: number;
   xp: number;
   /** XP inside the current level and the cost of the next one. */

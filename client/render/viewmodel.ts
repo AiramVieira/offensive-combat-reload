@@ -1,7 +1,10 @@
 // First-person arms + rifle built from primitives (placeholder for weapons/rifle_padrao.glb).
 // Handles ADS blend, sprint pose, reload animation, bob, sway, strafe tilt and recoil kick (section 4).
+// The arms follow the character: skin color, the shirt's sleeve hem, and PCD (a missing hand or arm is not
+// drawn; the knife or the grenade goes to the other hand).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { bodyStats, type Appearance } from '@shared/appearance';
 import { PROGRESSION, type GrenadeKind, type KnifeModel, type RifleLevel } from '@shared/progression';
 import { PALETTE, toon, toonGradient } from './materials';
 import { grenadeModel } from '../weapons/grenades';
@@ -37,6 +40,14 @@ export class Viewmodel {
   private gun = new THREE.Group();
   private mag!: THREE.Mesh;
   private knife = new THREE.Group();
+  /** Mirrors the knife to the left hand when the right one is missing. */
+  private knifeSide = new THREE.Group();
+  private grenadeSide = new THREE.Group();
+  private skinMat = toon(PALETTE.skin);
+  /** Sleeve hem at the top of the forearm (null = tank top: bare arms). */
+  private hemColor: THREE.ColorRepresentation | null = PALETTE.teamA;
+  private missing = { armL: false, armR: false, handL: false, handR: false };
+  private rifleLevel: RifleLevel = PROGRESSION.rifle[0];
   private knifeItem: THREE.Object3D | null = null;
   private grenadeArm = new THREE.Group();
   private grenadeInHand: THREE.Object3D = new THREE.Group();
@@ -58,8 +69,9 @@ export class Viewmodel {
   private tmp = new THREE.Vector3();
 
   constructor(vmScene: THREE.Scene) {
-    const skin = toon(PALETTE.skin);
-    const sleeve = toon(PALETTE.sleeve);
+    // The knife and grenade forearms are bare (every shirt is short-sleeved or a tank top).
+    const skin = this.skinMat;
+    const sleeve = this.skinMat;
     // Muzzle flash: two crossed additive quads.
     const flashMat = new THREE.MeshBasicMaterial({ map: flashTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const quad = new THREE.PlaneGeometry(0.16, 0.16);
@@ -92,12 +104,28 @@ export class Viewmodel {
     this.grenadeArm.visible = false;
 
     this.setRifle(PROGRESSION.rifle[0]);
-    this.root.add(this.gun, this.knife, this.grenadeArm);
+    this.knifeSide.add(this.knife);
+    this.grenadeSide.add(this.grenadeArm);
+    this.root.add(this.gun, this.knifeSide, this.grenadeSide);
     vmScene.add(this.root);
+  }
+
+  /** The character's arms: skin, sleeve hem, and which hand or arm is missing (PCD). */
+  setBody(look: Appearance) {
+    const m = bodyStats(look).missing;
+    this.missing = { armL: m.armL, armR: m.armR, handL: m.handL, handR: m.handR };
+    this.skinMat.color.set(look.pele);
+    this.hemColor = look.roupas.camiseta.id === 'regata' ? null : look.roupas.camiseta.cor;
+    // No right hand: the knife is swung with the left one. No left hand: the grenade goes in the right.
+    // (A mirrored group: its children keep their animation, on the other side.)
+    this.knifeSide.scale.x = m.handR ? -1 : 1;
+    this.grenadeSide.scale.x = m.handL ? -1 : 1;
+    this.setRifle(this.rifleLevel);
   }
 
   /** Rebuilds the rifle for a progression level: its sight, paint job and the matching ADS pose. */
   setRifle(level: RifleLevel) {
+    this.rifleLevel = level;
     for (const child of [...this.gun.children]) {
       if (child === this.flashGroup) continue;
       this.gun.remove(child);
@@ -107,22 +135,28 @@ export class Viewmodel {
     for (const m of parts.meshes) this.gun.add(m);
     this.mag = parts.mag;
     this.gun.add(this.mag);
-    // Arms: sleeve + hand boxes stretched between two points. Right hand on the grip, left under the handguard.
-    const skin = toon(PALETTE.skin);
-    const sleeve = toon(PALETTE.sleeve);
-    const band = toon(PALETTE.teamA);
+    // Arms: forearm + hand boxes stretched between two points, with the sleeve's hem. Right hand on the
+    // grip, left under the handguard. PCD: a missing hand leaves the forearm, a missing arm leaves nothing
+    // (the rifle is held with one hand).
+    const skin = toon(this.skinMat.color);
+    const band = this.hemColor === null ? null : toon(this.hemColor);
     const limb = (from: THREE.Vector3, to: THREE.Vector3, thick: number, mat: THREE.Material) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(thick, thick, from.distanceTo(to)), mat);
       m.position.copy(from).add(to).multiplyScalar(0.5);
       m.lookAt(to);
       this.gun.add(m);
     };
-    limb(new THREE.Vector3(0.012, -0.06, 0.1), new THREE.Vector3(0.012, -0.075, 0.05), 0.05, skin);
-    limb(new THREE.Vector3(0.02, -0.08, 0.12), new THREE.Vector3(0.09, -0.2, 0.34), 0.07, sleeve);
-    limb(new THREE.Vector3(0.05, -0.13, 0.21), new THREE.Vector3(0.062, -0.15, 0.245), 0.074, band);
-    limb(new THREE.Vector3(-0.005, -0.04, -0.24), new THREE.Vector3(-0.01, -0.055, -0.18), 0.052, skin);
-    limb(new THREE.Vector3(-0.02, -0.06, -0.2), new THREE.Vector3(-0.17, -0.24, 0.1), 0.07, sleeve);
-    limb(new THREE.Vector3(-0.1, -0.15, -0.05), new THREE.Vector3(-0.115, -0.17, -0.02), 0.074, band);
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    if (!this.missing.armR) {
+      if (!this.missing.handR) limb(v(0.012, -0.06, 0.1), v(0.012, -0.075, 0.05), 0.05, skin);
+      limb(v(0.02, -0.08, 0.12), v(0.09, -0.2, 0.34), 0.07, skin);
+      if (band) limb(v(0.07, -0.165, 0.28), v(0.085, -0.19, 0.325), 0.076, band);
+    }
+    if (!this.missing.armL) {
+      if (!this.missing.handL) limb(v(-0.005, -0.04, -0.24), v(-0.01, -0.055, -0.18), 0.052, skin);
+      limb(v(-0.02, -0.06, -0.2), v(-0.17, -0.24, 0.1), 0.07, skin);
+      if (band) limb(v(-0.14, -0.21, 0.05), v(-0.165, -0.235, 0.09), 0.076, band);
+    }
     for (const gl of parts.glow) this.gun.add(gl);
     if (!this.flashGroup.parent) this.gun.add(this.flashGroup);
     bakeStaticParts(this.gun, [this.mag, this.flashGroup, ...parts.glow]);

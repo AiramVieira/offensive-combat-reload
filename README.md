@@ -32,6 +32,26 @@ Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o 
 - A sessão fica num cookie `HttpOnly` por 30 dias (renovados a cada uso); o navegador não guarda token nenhum. O WebSocket abre com um ticket de uso único válido por 30 s. A mesma conta só joga em um lugar por vez: entrar em outro derruba a conexão antiga.
 - Configuração de e-mail, Discord, backup e moderação: [docs/DEPLOY.md](docs/DEPLOY.md#5-contas-banco-e-mail-e-discord).
 
+### Personalizar o personagem
+
+No **Perfil → Personalizar personagem** há um editor com o boneco girando em 3D. Online, cada jogador aparece como se personalizou, e o corpo caído também.
+
+- **Corpo:** altura (Pequeno, Médio, Alto), biotipo (Magro, Médio, Gordo) e cor da pele (8 tons ou qualquer cor).
+- **Cabelo:** 3 estilos masculinos (curto, topete, black power) e 3 femininos (rabo de cavalo, longo solto, coque), em qualquer cor.
+- **Roupas** (3 de cada, para todos, cada peça com a cor que quiser): camiseta (básica, regata, polo); calça (jeans, cargo, moletom), bermuda (praia, jeans, esportiva) ou saia (lápis, rodada, de pregas); sapatos (tênis, bota, chinelo); chapéu (boné, palha, gorro); óculos (escuros, redondos, aviador); pulseira (couro, miçangas, relógio). Chapéu, óculos e pulseira são opcionais.
+- **Modo PCD:** personagem sem o braço esquerdo ou direito, sem a mão esquerda ou direita, e/ou sem a perna esquerda ou direita. Aparece na terceira pessoa e também nas mãos da primeira pessoa: sem um braço, o rifle fica numa mão só; sem a mão direita, a faca vai para a esquerda; sem a esquerda, a granada vai para a direita.
+
+O que muda no jogo ([shared/appearance.ts](shared/appearance.ts), aplicado no cliente e no servidor):
+
+| Escolha | Efeito |
+| --- | --- |
+| Altura | O corpo, as hitboxes e a altura da visão escalam juntos: Pequeno 90% (visão a 1,49 m), Médio 100% (1,65 m), Alto 110% (1,81 m). Quem é alto vê mais longe por cima das coisas, mas é um alvo maior. |
+| Biotipo | Gordo: **150 de vida** e tronco 30% mais largo. Magro: tronco 15% mais estreito. |
+| Sem mão ou sem braço | A hitbox do braço some (ou encurta sem a mão); **recarrega 30% mais devagar**. |
+| Sem perna | Só fica a hitbox do cotoco; **anda 25% mais devagar**. |
+
+O editor mostra esses efeitos (vida, altura da visão, tamanho da hitbox, recarga e velocidade) enquanto você escolhe. O bloqueio de movimento (onde o personagem cabe) é igual para todos. Os bots ganham um visual aleatório, com os mesmos efeitos.
+
 **Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Node no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
 
 **No jogo:** `Tab` mostra o placar (pontos, abates, mortes, humilhações, ping) e `Esc` → "Sair para o início" volta para a home.

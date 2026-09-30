@@ -12,6 +12,7 @@ import type { WebSocket } from 'ws';
 import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
 import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
 import { ACCOUNT_XP } from '@shared/accountLevel';
+import { bodyStats } from '@shared/appearance';
 import { knifeData, levelInfo, rifleData, sanitizeLoadout, weaponOfKill, type Loadout } from '@shared/progression';
 import { accountLevelOf, addAccountXp, addTime, addWeaponXp, equip, equippedOf, progressMsg, type LevelUp, type LiveAccount } from './progress';
 import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
@@ -20,7 +21,9 @@ const RIFLE = WEAPONS.rifle_padrao;
 const PEN_MIN_KEEP = minPenetrationKeep(RIFLE);
 const GRENADE = GRENADES.granada_frag;
 const GRENADE_LVL = grenadeLevel(GRENADE, ONLINE_GRENADE_LEVEL);
+/** Eye and chest height of an average body; the player's height scales them (bodyStats.scale). */
 const EYE = 1.6;
+const CHEST = 1.1;
 /** Extra meters allowed between what the client saw and the server's latest positions (latency). */
 const LAG_SLACK = 4;
 
@@ -42,6 +45,8 @@ interface SPlayer {
   sex: Sex;
   /** Equipped weapon levels (unlocked ones only): damage, fire rate and knife reach follow them. */
   loadout: Loadout;
+  /** What the character's look does in the game: height (eye, hitboxes) and max health. */
+  body: ReturnType<typeof bodyStats>;
   state: NetState;
   alive: boolean;
   health: number;
@@ -67,8 +72,8 @@ interface Corpse extends CorpseInfo {
 }
 
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const eye = (s: NetState): Vec3 => [s.p[0], s.p[1] + EYE, s.p[2]];
-const chest = (s: NetState): Vec3 => [s.p[0], s.p[1] + 1.1, s.p[2]];
+const eye = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + EYE * p.body.scale, p.state.p[2]];
+const chest = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + CHEST * p.body.scale, p.state.p[2]];
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const vec = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every(finite);
 
@@ -101,8 +106,22 @@ export class Session {
     clearInterval(this.timer);
   }
 
-  private playerInfo(p: SPlayer): PlayerInfo {
-    return { id: p.id, name: p.name, nivel: accountLevelOf(p.conn.account), sex: p.sex, lo: p.loadout, kills: p.kills, deaths: p.deaths, score: p.score, humiliations: p.humiliations, alive: p.alive, ping: p.ping };
+  /** `withLook`: include the appearance (only when a player appears, it doesn't change mid-session). */
+  private playerInfo(p: SPlayer, withLook = false): PlayerInfo {
+    return {
+      id: p.id,
+      name: p.name,
+      nivel: accountLevelOf(p.conn.account),
+      sex: p.sex,
+      lo: p.loadout,
+      ...(withLook ? { ap: p.conn.account.profile.appearance } : {}),
+      kills: p.kills,
+      deaths: p.deaths,
+      score: p.score,
+      humiliations: p.humiliations,
+      alive: p.alive,
+      ping: p.ping,
+    };
   }
 
   private broadcast(msg: ServerMsg, except?: number) {
@@ -122,6 +141,7 @@ export class Session {
       name,
       sex: conn.sex,
       loadout: equippedOf(conn.account),
+      body: bodyStats(conn.account.profile.appearance),
       state: { p: [0, -50, 0], yaw: 0, pitch: 0, f: 0 },
       // Joins dead: the client picks a spawn and sends 'respawn' right away.
       alive: false,
@@ -146,11 +166,11 @@ export class Session {
       t: 'joined',
       session: this.info,
       you: p.id,
-      players: [...this.players.values()].map((x) => this.playerInfo(x)),
-      corpses: [...this.corpses.values()].filter((c) => !c.humiliated).map(({ id, victim, name: n, sex, p: pos, yaw, until }) => ({ id, victim, name: n, sex, p: pos, yaw, until })),
+      players: [...this.players.values()].map((x) => this.playerInfo(x, true)),
+      corpses: [...this.corpses.values()].filter((c) => !c.humiliated).map(({ id, victim, name: n, sex, ap, p: pos, yaw, until }) => ({ id, victim, name: n, sex, ap, p: pos, yaw, until })),
       time: this.now(),
     });
-    this.broadcast({ t: 'playerJoined', player: this.playerInfo(p) }, p.id);
+    this.broadcast({ t: 'playerJoined', player: this.playerInfo(p, true) }, p.id);
     this.onChange();
   }
 
@@ -235,7 +255,7 @@ export class Session {
         if (p.alive || !vec(msg.p) || !finite(msg.yaw)) return;
         if (now - p.deadAt < NET.respawnDelay * 1000 - 250) return;
         p.alive = true;
-        p.health = HEALTH.max;
+        p.health = p.body.maxHealth;
         p.lastDamageAt = 0;
         p.dance = null;
         p.state = { p: msg.p, yaw: msg.yaw, pitch: 0, f: 0 };
@@ -256,7 +276,7 @@ export class Session {
     const rifle = rifleData(p.loadout.rifle);
     if (p.hitTimes.length >= Math.ceil(rifle.cadencia / 60) + 2) return;
     // Distance check against the server's view of both players.
-    const serverDist = dist3(eye(p.state), chest(target.state));
+    const serverDist = dist3(eye(p), chest(target));
     if (serverDist > rifle.alcanceMaximo || Math.abs(serverDist - reportedDist) > LAG_SLACK + serverDist * 0.1) return;
     p.hitTimes.push(now);
     const dist = Math.min(reportedDist, rifle.alcanceMaximo);
@@ -267,7 +287,7 @@ export class Session {
     if (dist > SCORE.longShotDistance) awards.push({ label: 'longShot', value: SCORE.longShot });
     // Went through wood/glass: never less than the weapon allows, never more than a clean hit.
     const keep = finite(reportedKeep) ? Math.min(1, Math.max(PEN_MIN_KEEP, reportedKeep!)) : 1;
-    this.damage(target, p, computeDamage(rifle, dist, region, keep), kind, eye(p.state), awards);
+    this.damage(target, p, computeDamage(rifle, dist, region, keep), kind, eye(p), awards);
   }
 
   private onStab(p: SPlayer, targetId: number, behind: boolean, now: number) {
@@ -280,7 +300,7 @@ export class Session {
     p.lastStab = now;
     const awards: Award[] = [{ label: 'knife', value: SCORE.knife }];
     if (behind) awards.push({ label: 'backstab', value: SCORE.backstab });
-    this.damage(target, p, knife.letal ? LETHAL_DAMAGE : 55, 'knife', eye(p.state), awards);
+    this.damage(target, p, knife.letal ? LETHAL_DAMAGE : 55, 'knife', eye(p), awards);
   }
 
   private onBoom(p: SPlayer, msg: Extract<ClientMsg, { t: 'boom' }>, now: number) {
@@ -302,7 +322,7 @@ export class Session {
       const target = this.players.get(h?.target);
       if (!target || !target.alive || seen.has(target.id) || !finite(h.dist)) continue;
       seen.add(target.id);
-      const serverDist = dist3(msg.p, chest(target.state));
+      const serverDist = dist3(msg.p, chest(target));
       if (serverDist > GRENADE_LVL.raioDano + 3 || Math.abs(serverDist - h.dist) > 3) continue;
       // Non-lethal levels protect other players only: your own grenade can kill you.
       const raw = explosionDamage(GRENADE_LVL, h.dist);
@@ -387,6 +407,7 @@ export class Session {
       victim: victim.id,
       name: victim.name,
       sex: victim.sex,
+      ap: victim.conn.account.profile.appearance,
       p: victim.state.p,
       yaw: victim.state.yaw,
       until: now + NET.corpseWindow * 1000,
@@ -396,16 +417,16 @@ export class Session {
     };
     this.corpses.set(corpse.id, corpse);
     const players = [this.playerInfo(victim), ...(attacker && attacker !== victim ? [this.playerInfo(attacker)] : [])];
-    const { id, victim: v, name, sex, p, yaw, until } = corpse;
-    this.broadcast({ t: 'kill', victim: victim.id, attacker: attacker?.id ?? null, kind, awards, corpse: { id, victim: v, name, sex, p, yaw, until }, players });
+    const { id, victim: v, name, sex, ap, p, yaw, until } = corpse;
+    this.broadcast({ t: 'kill', victim: victim.id, attacker: attacker?.id ?? null, kind, awards, corpse: { id, victim: v, name, sex, ap, p, yaw, until }, players });
   }
 
   private tick() {
     const now = this.now();
     const dt = 1 / NET.tickRate;
     for (const p of this.players.values()) {
-      if (p.alive && p.health < HEALTH.max && now - p.lastDamageAt > HEALTH.regenDelay * 1000) {
-        p.health = Math.min(HEALTH.max, p.health + HEALTH.regenPerSecond * dt);
+      if (p.alive && p.health < p.body.maxHealth && now - p.lastDamageAt > HEALTH.regenDelay * 1000) {
+        p.health = Math.min(p.body.maxHealth, p.health + HEALTH.regenPerSecond * dt);
       }
       const xpBefore = p.conn.account.profile.xp;
       const up = addTime(p.conn.account, dt, p.alive);

@@ -23,7 +23,8 @@ import { buildGltfMap } from './world/gltfMap';
 import { MapBuilder } from './world/mapBuilder';
 import { DummyManager, type Dummy, type HitResult } from './entities/dummy';
 import { LocalPlayer } from './entities/localPlayer';
-import { Avatar, LOCAL_COLORS } from './entities/avatar';
+import { Avatar } from './entities/avatar';
+import { bodyStats, defaultAppearance } from '@shared/appearance';
 import { Weapon } from './weapons/weapon';
 import { Melee, findMeleeTarget } from './weapons/melee';
 import { GrenadeProjectiles, GrenadeThrower } from './weapons/grenades';
@@ -110,7 +111,15 @@ async function boot() {
   player.netControlled = !!online;
   if (online) player.respawnDelay = NET.respawnDelay + 0.3;
   if (botMode) player.respawnDelay = 5;
-  const avatar = new Avatar(ctx.scene, LOCAL_COLORS, choice.sex);
+  // The character from the profile (default look without an account) and what it does in the game:
+  // max health (build), eye height and hitboxes (height), reload (no hand/arm) and speed (no leg).
+  const look = choice.account?.aparencia ?? defaultAppearance(choice.sex);
+  const body = bodyStats(look);
+  player.maxHealth = body.maxHealth;
+  player.health = body.maxHealth;
+  player.eyeScale = body.scale;
+  viewmodel.setBody(look);
+  const avatar = new Avatar(ctx.scene, look, choice.sex);
   const melee = new Melee(knifeData(progress.equipped('faca')));
   const grenadeData = GRENADES.granada_frag;
   const grenadeLvl = grenadeLevel(grenadeData, GRENADE_LEVEL);
@@ -130,6 +139,7 @@ async function boot() {
   const playerTarget: Combatant & { yaw: number } = {
     id: me,
     sex: choice.sex,
+    look,
     get name() {
       return choice.name;
     },
@@ -146,10 +156,10 @@ async function boot() {
       return player.yaw;
     },
     eye: (out) => player.eye(1, out),
-    refineRegion: (pt, r) => refineRegion(pt, r, playerFeet(playerPos), player.yaw),
+    refineRegion: (pt, r) => refineRegion(pt, r, playerFeet(playerPos), player.yaw, body.scale),
     isBehind: (pt) => isBehind(pt, playerFeet(playerPos), player.yaw),
   };
-  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry) : null;
+  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry, body) : null;
   if (playerRig) player.mb.ignoreBody = playerRig.body;
 
   /** Everything that can currently be shot / stabbed / blown up. */
@@ -331,6 +341,7 @@ async function boot() {
   const applyLoadout = () => {
     const r = levelInfo('rifle', progress.equipped('rifle'));
     weapon.setData(rifleData(r.nivel));
+    weapon.reloadMul = body.reloadMul;
     viewmodel.setRifle(r);
     hud.setWeaponName(r.nome);
     const k = levelInfo('faca', progress.equipped('faca'));
@@ -404,7 +415,7 @@ async function boot() {
   // --- Humiliation ----------------------------------------------------------------------------------
   const playerFeet = (out: THREE.Vector3, alpha = 1) => {
     player.eye(alpha, out);
-    out.y -= eyeHeight(player.move);
+    out.y -= eyeHeight(player.move) * player.eyeScale;
     return out;
   };
 
@@ -936,7 +947,7 @@ async function boot() {
         sprint: !locked && !melee.swinging && !fireIntent && input.down('sprint'),
         ads: !locked && !melee.swinging && !thrower.busy && input.down('ads'),
         yaw: player.yaw,
-        speedMul: weapon.data.movimento,
+        speedMul: weapon.data.movimento * body.speedMul,
         lunge,
       };
       const ev = player.fixedStep(dt, move, simTime);
@@ -1236,7 +1247,7 @@ async function boot() {
     hudTimer -= frameDt;
     if (hudTimer <= 0) {
       hudTimer = 1 / 15;
-      hud.setHealth(player.health);
+      hud.setHealth(player.health, player.maxHealth);
       hud.setAmmo(weapon.mag, weapon.reserve, weapon.data.pente, weapon.reloading);
       hud.setGrenades(thrower.count, grenadeData.quantidade);
       const mine = net?.info.get(me) ?? bots?.standings().find((p) => p.id === me);
