@@ -1,0 +1,14 @@
+# docker compose up -d --build   →   http://<este-computador>:8080
+# Change the public port with PORTA, e.g.  PORTA=80 docker compose up -d --build
+services:
+  jogo:
+    build: { context: ., target: server }
+    restart: unless-stopped
+    # Not published: only nginx talks to it, over the internal network.
+    expose: ['8787']
+
+  web:
+    build: { context: ., target: web }
+    restart: unless-stopped
+    depends_on: [jogo]
+    ports: ['${PORTA:-8080}:80']

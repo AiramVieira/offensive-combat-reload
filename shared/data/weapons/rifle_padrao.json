@@ -1,0 +1,79 @@
+{
+  "id": "rifle_padrao",
+  "nome": "Rifle Padrão",
+  "categoria": "rifle",
+  "slot": "primaria",
+  "dano": {
+    "max": 30,
+    "min": 20,
+    "distMax": 20,
+    "distMin": 45
+  },
+  "multiplicadores": {
+    "cabeca": 2.0,
+    "tronco": 1.0,
+    "bracos": 0.9,
+    "pernas": 0.8
+  },
+  "cadencia": 700,
+  "modo": "auto",
+  "pente": 30,
+  "reserva": 120,
+  "recarga": {
+    "tatica": 2.2,
+    "vazia": 2.7
+  },
+  "dispersao": {
+    "mirando": 0.1,
+    "parado": 0.8,
+    "andando": 1.8,
+    "noAr": 4.0,
+    "porTiro": 0.2,
+    "decaimento": 6.0
+  },
+  "recuo": {
+    "vertical": 0.9,
+    "horizontal": [
+      -0.3,
+      0.4
+    ],
+    "retorno": 8.0
+  },
+  "ads": {
+    "tempo": 0.22,
+    "zoom": 0.85
+  },
+  "movimento": 1.0,
+  "alcanceMaximo": 300,
+  "penetracao": {
+    "maxSuperficies": 2,
+    "materiais": {
+      "wood": {
+        "dano": 0.6,
+        "espessuraMax": 0.4
+      },
+      "glass": {
+        "dano": 0.9,
+        "espessuraMax": 0.1
+      }
+    }
+  },
+  "tracanteACada": 3,
+  "desbloqueioNivel": 1,
+  "preco": {
+    "moedaJogo": 0,
+    "premium": 0
+  },
+  "slotsAcessorio": [
+    "mira",
+    "cano",
+    "pente",
+    "empunhadura"
+  ],
+  "modelo": "weapons/rifle_padrao.glb",
+  "sons": {
+    "tiro": "rifle_fire",
+    "recarga": "rifle_reload",
+    "vazio": "dry_fire"
+  }
+}

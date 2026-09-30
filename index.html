@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offensive Combat — Protótipo</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/client/styles.css" />
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div id="hud" class="hidden">
+      <div id="vignette"></div>
+
+      <div id="crosshair">
+        <i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="dot"></i>
+      </div>
+      <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+      <div id="popups"></div>
+      <div id="cook" class="hidden"><div id="cook-fill"></div></div>
+      <div id="grenade-warn" class="hidden"><span class="icon">💣</span><span class="arrow">▲</span></div>
+      <div id="banner"></div>
+      <div id="prompt" class="hidden sticker">
+        <kbd>E</kbd><span id="prompt-text"></span>
+        <div class="prompt-bar"><div id="prompt-fill"></div></div>
+      </div>
+
+      <div id="score" class="sticker">
+        <div><span id="score-points-label"></span><b id="score-points">0</b></div>
+        <div><span id="score-kills-label"></span><b id="score-kills">0</b></div>
+        <div><span id="score-acc-label"></span><b id="score-acc">0%</b></div>
+      </div>
+
+      <div id="killfeed"></div>
+
+      <div id="health" class="sticker">
+        <span id="health-label"></span>
+        <div id="health-bar"><div id="health-fill"></div></div>
+        <b id="health-num">100</b>
+      </div>
+
+      <div id="ammo" class="sticker">
+        <div id="ammo-warn"></div>
+        <div id="grenades"></div>
+        <div id="weapon-name"></div>
+        <div class="ammo-count"><b id="ammo-mag">30</b><span>/</span><span id="ammo-reserve">120</span></div>
+      </div>
+
+      <div id="death" class="hidden">
+        <div class="death-card sticker">
+          <div id="death-msg"></div>
+          <div id="death-timer"></div>
+        </div>
+      </div>
+
+      <div id="scoreboard" class="hidden sticker">
+        <div class="sb-top"><b id="scoreboard-title"></b><span id="scoreboard-session"></span></div>
+        <table>
+          <thead><tr id="scoreboard-head"></tr></thead>
+          <tbody id="scoreboard-body"></tbody>
+        </table>
+      </div>
+      <div id="net-status" class="hidden"></div>
+
+      <pre id="debug" class="hidden"></pre>
+    </div>
+
+    <div id="loading" class="screen">
+      <h1 class="logo">OFFENSIVE<br /><span>COMBAT</span></h1>
+      <div class="progress"><div id="loading-fill"></div></div>
+      <p id="loading-tip" class="tip"></p>
+    </div>
+
+    <div id="home" class="screen hidden">
+      <h1 class="logo">OFFENSIVE<br /><span>COMBAT</span></h1>
+      <div class="home-card sticker">
+        <div id="home-start">
+          <label class="home-name"><span id="home-name-label"></span><input id="home-name" type="text" autocomplete="nickname" spellcheck="false" /></label>
+          <div class="home-sex">
+            <span id="home-sex-label"></span>
+            <div class="sex-toggle" role="radiogroup" aria-labelledby="home-sex-label">
+              <button type="button" class="sex-btn" role="radio" data-sex="m"></button>
+              <button type="button" class="sex-btn" role="radio" data-sex="f"></button>
+            </div>
+          </div>
+          <div class="home-buttons">
+            <button id="home-online" class="big-btn"></button>
+            <button id="home-bots" class="big-btn alt"></button>
+            <div class="bot-options">
+              <label><span id="bot-skill-label"></span><select id="bot-skill"></select></label>
+              <label><span id="bot-count-label"></span><select id="bot-count"></select></label>
+            </div>
+            <button id="home-offline" class="link-btn"></button>
+          </div>
+        </div>
+        <div id="home-lobby" class="hidden">
+          <h3 id="home-lobby-title"></h3>
+          <ul id="session-list"></ul>
+          <div class="session-create">
+            <input id="session-new-name" type="text" spellcheck="false" />
+            <button id="session-create" class="small-btn"></button>
+          </div>
+          <button id="home-back" class="link-btn"></button>
+        </div>
+        <p id="home-status"></p>
+      </div>
+    </div>
+
+    <div id="menu" class="screen hidden">
+      <div class="menu-card sticker">
+        <h1 class="logo small">OFFENSIVE <span>COMBAT</span></h1>
+        <p id="menu-subtitle" class="subtitle"></p>
+        <p id="gpu-warning" class="gpu-warning hidden"></p>
+        <button id="play-btn" class="big-btn"></button>
+        <p id="menu-resume-hint" class="hint hidden"></p>
+        <div class="menu-columns">
+          <div>
+            <h3 id="controls-title"></h3>
+            <table id="controls-table"></table>
+          </div>
+          <div>
+            <h3 id="settings-title"></h3>
+            <label><span id="lbl-sens"></span><input id="set-sens" type="range" min="0.3" max="8" step="0.05" /><output id="out-sens"></output></label>
+            <label><span id="lbl-ads"></span><input id="set-ads" type="range" min="0.3" max="1.5" step="0.05" /><output id="out-ads"></output></label>
+            <label><span id="lbl-fov"></span><input id="set-fov" type="range" min="55" max="95" step="1" /><output id="out-fov"></output></label>
+            <label><span id="lbl-vol"></span><input id="set-vol" type="range" min="0" max="1" step="0.05" /><output id="out-vol"></output></label>
+            <label><span id="lbl-quality"></span><select id="set-quality"></select><output></output></label>
+            <label class="check"><input id="set-invert" type="checkbox" /><span id="lbl-invert"></span></label>
+          </div>
+        </div>
+        <p id="menu-debug-hint" class="hint"></p>
+        <button id="menu-exit" class="link-btn hidden"></button>
+      </div>
+    </div>
+
+    <script type="module" src="/client/main.ts"></script>
+  </body>
+</html>

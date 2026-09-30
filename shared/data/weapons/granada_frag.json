@@ -1,0 +1,17 @@
+{
+  "id": "granada_frag",
+  "nome": "Granada",
+  "quantidade": 2,
+  "recargaSegundos": 10,
+  "pavio": 3.0,
+  "tempoMinimoPuxar": 0.2,
+  "velocidadeLancamento": 17,
+  "anguloExtraGraus": 7,
+  "intervalo": 0.8,
+  "raio": 0.07,
+  "quique": 0.35,
+  "atrito": 0.7,
+  "niveis": [
+    { "nivel": 1, "raioDano": 7, "raioDanoMaximo": 2.5, "danoMax": 85, "danoMin": 12, "podeMatar": true }
+  ]
+}

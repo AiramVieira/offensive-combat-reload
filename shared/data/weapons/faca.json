@@ -1,0 +1,14 @@
+{
+  "id": "faca",
+  "nome": "Faca",
+  "categoria": "corpo",
+  "slot": "corpo",
+  "letal": true,
+  "alcance": 1.8,
+  "alcanceInvestida": 3.2,
+  "anguloGraus": 45,
+  "duracao": 0.45,
+  "impacto": 0.14,
+  "intervalo": 0.6,
+  "velocidadeInvestida": 14
+}

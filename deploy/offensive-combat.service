@@ -1,0 +1,23 @@
+# systemd unit for the game server on a Linux machine without Docker (nginx in front, see
+# deploy/nginx/offensive-combat.conf). Assumes the project is at /var/www/offensive-combat and was built
+# there with `npm ci && npm run build`.
+#
+#   sudo cp deploy/offensive-combat.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now offensive-combat
+#   journalctl -u offensive-combat -f        # logs
+
+[Unit]
+Description=Offensive Combat game server
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/offensive-combat
+ExecStart=/usr/bin/node build/server.mjs
+Environment=NODE_ENV=production HOST=127.0.0.1 PORT=8787
+Restart=on-failure
+User=www-data
+Group=www-data
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

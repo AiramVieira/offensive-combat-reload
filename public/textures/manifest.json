@@ -1,0 +1,3 @@
+{
+  "_leia-me": "Troque as texturas procedurais por arquivos desta pasta. Chave = superfície (tijolo, reboco, madeira, piso, telhado, concreto, calcada, asfalto, grama, azulejo, metal, vidro). Ex.: \"tijolo\": { \"arquivo\": \"tijolo.jpg\", \"metros\": 1.6, \"tingir\": false }. Veja docs/MAPAS.md."
+}
