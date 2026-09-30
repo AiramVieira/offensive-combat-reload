@@ -166,7 +166,7 @@ export class Hud {
     this.warn.style.opacity = String(0.55 + closeness * 0.45);
   }
 
-  /** Big animated banner ("NO PÁSSARO!", "HUMILHADO!"). */
+  /** Big animated banner ("NO PÁSSARO!", "OPRIMIDO!"). */
   showBanner(text: string, variant: 'bird' | 'taunt' | 'level') {
     this.banner.textContent = text;
     this.banner.className = variant;

@@ -37,7 +37,7 @@ export async function showProfile(root: HTMLElement, o: Options) {
     ['statKnife', String(p.totais.facadas)],
     ['statBackstab', String(p.totais.pelasCostas)],
     ['statGrenade', String(p.totais.granadas)],
-    ['statHumiliations', String(p.totais.humilhacoes)],
+    ['statHumiliations', String(p.totais.opressoes)],
     ['statTime', duration(p.totais.segundosJogados)],
     ['statMatches', String(p.totais.participacoes)],
   ];

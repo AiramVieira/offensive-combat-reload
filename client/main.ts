@@ -1187,7 +1187,7 @@ async function boot() {
     const gap = (Math.tan(spread) / Math.tan((cam.fov * DEG) / 2)) * (window.innerHeight / 2) + 3;
     hud.setCrosshair(gap, weapon.ads < 0.6 && sprintVis < 0.5 && !player.dead && !taunt.active);
 
-    // Context prompt: dancing progress, or "[E] Humilhar" over a fresh corpse.
+    // Context prompt: dancing progress, or "[E] Oprimir" over a fresh corpse.
     if (taunt.active && taunt.dummy) {
       hud.setPrompt('E', t('dancing', { name: taunt.dummy.name }), taunt.t / taunt.duration);
     } else {

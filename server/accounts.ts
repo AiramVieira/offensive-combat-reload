@@ -207,7 +207,7 @@ export async function fullProfile(db: Db, accountId: string): Promise<ProfileRes
     facadas: s.knife_kills ?? 0,
     pelasCostas: s.backstabs ?? 0,
     granadas: s.grenade_kills ?? 0,
-    humilhacoes: s.humiliations ?? 0,
+    opressoes: s.humiliations ?? 0,
     segundosJogados: Number(s.seconds_played ?? 0),
     participacoes: s.matches_played ?? 0,
   };
@@ -218,7 +218,7 @@ export async function fullProfile(db: Db, accountId: string): Promise<ProfileRes
     abates: r.kills,
     mortes: r.deaths,
     pontos: r.score,
-    humilhacoes: r.humiliations,
+    opressoes: r.humiliations,
     xp: r.account_xp,
   }));
   const libera = profile.name_changed_at ? new Date(profile.name_changed_at.getTime() + NAME_COOLDOWN_DAYS * DAY) : null;

@@ -1,4 +1,4 @@
-// Floating countdown above a humiliable corpse (section 8): ring + seconds + [E], or "HUMILHADO!".
+// Floating countdown above a humiliable corpse (section 8): ring + seconds + [E], or "OPRIMIDO!".
 import * as THREE from 'three';
 
 export class CorpseTimer {
@@ -82,8 +82,8 @@ export class CorpseTimer {
     g.save();
     g.translate(80, 100);
     g.rotate(-0.12);
-    g.strokeText('HUMILHADO!', 0, 0);
-    g.fillText('HUMILHADO!', 0, 0);
+    g.strokeText('OPRIMIDO!', 0, 0);
+    g.fillText('OPRIMIDO!', 0, 0);
     g.restore();
     this.tex.needsUpdate = true;
   }
