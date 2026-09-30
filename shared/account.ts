@@ -42,7 +42,7 @@ export interface Participation {
   abates: number;
   mortes: number;
   pontos: number;
-  humilhacoes: number;
+  opressoes: number;
   xp: number;
 }
 
@@ -54,7 +54,7 @@ export interface Totals {
   facadas: number;
   pelasCostas: number;
   granadas: number;
-  humilhacoes: number;
+  opressoes: number;
   segundosJogados: number;
   participacoes: number;
 }

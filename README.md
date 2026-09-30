@@ -26,15 +26,15 @@ Ao abrir o jogo, a **home** mostra a sua **conta** e três opções. O **sexo do
 Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o **Discord**. Treino e contra bots funcionam sem conta, com todas as armas no nível 1.
 
 - O jogador aparece como **Nome#1234**: nomes podem repetir, o número diferencia. A primeira troca de nome é livre; depois, uma a cada 7 dias.
-- O **Perfil** (na home) tem a escolha do sexo do personagem e mostra o nível da conta, as estatísticas (abates, mortes, na cabeça, no pássaro, facadas, humilhações, tempo jogado) e as últimas 10 participações. Ali também ficam "Vincular Discord", "Sair da conta" e "Excluir conta" (30 dias para desistir).
-- A **conta tem nível** com XP próprio, ganho só online: 10 por minuto vivo, 25 por abate e 50 por humilhação. Do nível n para o n+1 custa 1000 × n^1,5 ([shared/data/nivel_conta.json](shared/data/nivel_conta.json)). O placar (`Tab`) mostra o nível de cada um.
+- O **Perfil** (na home) tem a escolha do sexo do personagem e mostra o nível da conta, as estatísticas (abates, mortes, na cabeça, no pássaro, facadas, opressões, tempo jogado) e as últimas 10 participações. Ali também ficam "Vincular Discord", "Sair da conta" e "Excluir conta" (30 dias para desistir).
+- A **conta tem nível** com XP próprio, ganho só online: 10 por minuto vivo, 25 por abate e 50 por opressão. Do nível n para o n+1 custa 1000 × n^1,5 ([shared/data/nivel_conta.json](shared/data/nivel_conta.json)). O placar (`Tab`) mostra o nível de cada um.
 - "Esqueci a senha" manda um link válido por 24 h. Sem Gmail configurado, o link aparece no log do servidor.
 - A sessão fica num cookie `HttpOnly` por 30 dias (renovados a cada uso); o navegador não guarda token nenhum. O WebSocket abre com um ticket de uso único válido por 30 s. A mesma conta só joga em um lugar por vez: entrar em outro derruba a conexão antiga.
 - Configuração de e-mail, Discord, backup e moderação: [docs/DEPLOY.md](docs/DEPLOY.md#5-contas-banco-e-mail-e-discord).
 
 **Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Node no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
 
-**No jogo:** `Tab` mostra o placar (pontos, abates, mortes, humilhações, ping) e `Esc` → "Sair para o início" volta para a home.
+**No jogo:** `Tab` mostra o placar (pontos, abates, mortes, opressões, ping) e `Esc` → "Sair para o início" volta para a home.
 
 ### Nascimento (seção 6)
 
@@ -42,7 +42,7 @@ No mata-mata livre (online e contra bots) há **21 pontos de nascimento neutros*
 
 ### O que é do servidor e o que é do cliente
 
-O servidor ([server/](server/)) é a autoridade sobre **contas, vida, dano, abates, pontos, progresso das armas, respawn e corpos humilháveis**. Ele usa as mesmas regras de `shared/` que o cliente (dados das armas, níveis de granada, tabela de pontos). O cliente envia sua posição a 20 Hz e informa o que seus tiros, facadas e granadas acertaram. O servidor **confere cada informação** antes de aplicar: se os dois estão vivos, a cadência, a distância real entre os jogadores (com folga para a latência), o alcance, o raio da granada e a janela e distância da humilhação. Os outros jogadores aparecem **interpolados 100 ms no passado** entre dois snapshots, com as mesmas hitboxes dos bonecos. O protocolo está em [shared/protocol.ts](shared/protocol.ts).
+O servidor ([server/](server/)) é a autoridade sobre **contas, vida, dano, abates, pontos, progresso das armas, respawn e corpos oprimíveis**. Ele usa as mesmas regras de `shared/` que o cliente (dados das armas, níveis de granada, tabela de pontos). O cliente envia sua posição a 20 Hz e informa o que seus tiros, facadas e granadas acertaram. O servidor **confere cada informação** antes de aplicar: se os dois estão vivos, a cadência, a distância real entre os jogadores (com folga para a latência), o alcance, o raio da granada e a janela e distância da opressão. Os outros jogadores aparecem **interpolados 100 ms no passado** entre dois snapshots, com as mesmas hitboxes dos bonecos. O protocolo está em [shared/protocol.ts](shared/protocol.ts).
 
 **Ainda não feito** (próxima etapa da seção 14): predição e reconciliação com o servidor simulando o movimento (hoje a posição é confiada ao cliente); compensação de lag (rewind das hitboxes no servidor); mensagens binárias; fim de partida (limite de abates e tempo) e votação de mapa.
 
@@ -77,7 +77,7 @@ No modo **Contra bots**, cada bot é um jogador completo: usa o mesmo movimento,
 - **Bonecos de treino** com hitboxes simples (cabeça, tronco, braços, pernas), alguns se movendo, regeneração de vida e respawn.
 - **Faca (`F`)**: mata com um golpe, com investida curta até alvos a ~3 m; bônus de "Facada" e "Pelas costas" ([faca.json](shared/data/weapons/faca.json)).
 - **"No pássaro!"**: tiro na virilha (zona marcada pela fivela do cinto) mata na hora, com faixa na tela e bônus.
-- **Humilhação (`E`)**: depois do abate, o corpo mostra um timer de 6 s; em cima dele, `E` faz a "Dancinha da Vitória" em terceira pessoa (sem poder atirar) e rende **150 pontos** (o triplo do valor original, porque você fica exposto dançando). Cada corpo só pode ser humilhado uma vez; só a morte interrompe a dança.
+- **Opressão (`E`)**: depois do abate, o corpo mostra um timer de 6 s; em cima dele, `E` faz a "Dancinha da Vitória" em terceira pessoa (sem poder atirar) e rende **150 pontos** (o triplo do valor original, porque você fica exposto dançando). Cada corpo só pode ser oprimido uma vez; só a morte interrompe a dança.
 - **Granada (`G`)**: segure para tirar o pino e cozinhar. Se passar do pavio de 3 s, ela explode na sua mão. Solte para arremessar: depois de lançada, **o pavio deixa de contar e ela explode no primeiro contato** com qualquer coisa (chão, parede, carro ou a hitbox de alguém). Arremessar pulando leva a granada bem mais longe (velocidade ×1,35 mais o impulso do pulo; ~18 m contra ~9 m parado). O dano em área cai com a distância e é bloqueado por paredes, com **85 no centro**: mata qualquer um (inclusive você) com menos de 85 de vida. Há indicador de granada próxima no HUD. Online, o servidor só aceita a explosão num ponto que a granada poderia ter alcançado. Os valores ficam em [granada_frag.json](shared/data/weapons/granada_frag.json) (`impacto`, `bonusPulo`, `tempoMaximoVoo`).
 - **Qualidade gráfica** (Automática/Baixa/Média/Alta) com resolução dinâmica, e aviso quando o navegador está renderizando sem GPU.
 - **HUD** (retículo dinâmico, hitmarker, vida, munição, pop-ups de pontos, kill feed, tela de morte), menu inicial/pausa com configurações, sons procedurais em Web Audio, piadas ambientais (flamingos, caminhão de sorvete).
