@@ -7,12 +7,12 @@
 // with a lag tolerance.
 import type { WebSocket } from 'ws';
 import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
-import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, MELEE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
+import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
+import { DEFAULT_LOADOUT, knifeData, levelInfo, rifleData, sanitizeLoadout, type Loadout } from '@shared/progression';
 import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
 
 const RIFLE = WEAPONS.rifle_padrao;
 const PEN_MIN_KEEP = minPenetrationKeep(RIFLE);
-const KNIFE = MELEE.faca;
 const GRENADE = GRENADES.granada_frag;
 const GRENADE_LVL = grenadeLevel(GRENADE, ONLINE_GRENADE_LEVEL);
 const EYE = 1.6;
@@ -33,6 +33,8 @@ interface SPlayer {
   id: number;
   name: string;
   sex: Sex;
+  /** Equipped weapon levels, reported by the client: damage, fire rate and knife reach follow them. */
+  loadout: Loadout;
   state: NetState;
   alive: boolean;
   health: number;
@@ -47,7 +49,7 @@ interface SPlayer {
   lastStab: number;
   lastShotRelay: number;
   lastProp: number;
-  grenades: Map<number, { thrownAt: number; fuse: number; impact: boolean; origin: Vec3; speed: number }>;
+  grenades: Map<number, { thrownAt: number; fuse: number; impact: boolean; mine: boolean; origin: Vec3; speed: number }>;
   dance: { corpse: number; since: number } | null;
 }
 
@@ -93,7 +95,7 @@ export class Session {
   }
 
   private playerInfo(p: SPlayer): PlayerInfo {
-    return { id: p.id, name: p.name, sex: p.sex, kills: p.kills, deaths: p.deaths, score: p.score, humiliations: p.humiliations, alive: p.alive, ping: p.ping };
+    return { id: p.id, name: p.name, sex: p.sex, lo: p.loadout, kills: p.kills, deaths: p.deaths, score: p.score, humiliations: p.humiliations, alive: p.alive, ping: p.ping };
   }
 
   private broadcast(msg: ServerMsg, except?: number) {
@@ -112,6 +114,7 @@ export class Session {
       id: conn.id,
       name,
       sex: conn.sex,
+      loadout: { ...DEFAULT_LOADOUT },
       state: { p: [0, -50, 0], yaw: 0, pitch: 0, f: 0 },
       // Joins dead: the client picks a spawn and sends 'respawn' right away.
       alive: false,
@@ -173,7 +176,7 @@ export class Session {
         return;
       case 'shot': {
         // Cosmetic relay (tracer + sound for others), rate-limited to the rifle's fire rate.
-        if (!p.alive || !vec(msg.o) || !vec(msg.e) || now - p.lastShotRelay < (60000 / RIFLE.cadencia) * 0.7) return;
+        if (!p.alive || !vec(msg.o) || !vec(msg.e) || now - p.lastShotRelay < (60000 / rifleData(p.loadout.rifle).cadencia) * 0.7) return;
         p.lastShotRelay = now;
         this.broadcast({ t: 'shot', id: p.id, o: msg.o, e: msg.e }, p.id);
         return;
@@ -194,16 +197,22 @@ export class Session {
         return this.onStab(p, msg.target, !!msg.behind, now);
       case 'grenade': {
         if (!p.alive || !finite(msg.id) || !vec(msg.p) || !vec(msg.v) || !finite(msg.fuse)) return;
-        if (p.grenades.size >= 4 || p.grenades.has(msg.id)) return;
-        const impact = !!msg.impact && GRENADE.impacto;
-        const fuse = Math.max(0, Math.min(impact ? GRENADE.tempoMaximoVoo : GRENADE.pavio, msg.fuse));
+        // Land mines (grenade level 2) stay until they go off or their owner respawns.
+        const mine = !!msg.mine && levelInfo('granada', p.loadout.granada).tipo === 'mina';
+        const live = [...p.grenades.values()];
+        if (p.grenades.has(msg.id) || (mine ? live.filter((g) => g.mine).length >= 3 : live.filter((g) => !g.mine).length >= 4)) return;
+        const impact = !mine && !!msg.impact && GRENADE.impacto;
+        const fuse = mine ? 0 : Math.max(0, Math.min(impact ? GRENADE.tempoMaximoVoo : GRENADE.pavio, msg.fuse));
         const speed = Math.hypot(msg.v[0], msg.v[1], msg.v[2]);
-        p.grenades.set(msg.id, { thrownAt: now, fuse, impact, origin: msg.p, speed });
-        this.broadcast({ t: 'grenade', owner: p.id, id: msg.id, p: msg.p, v: msg.v, fuse, impact }, p.id);
+        p.grenades.set(msg.id, { thrownAt: now, fuse, impact, mine, origin: msg.p, speed });
+        this.broadcast({ t: 'grenade', owner: p.id, id: msg.id, p: msg.p, v: msg.v, fuse, impact, ...(mine ? { mine } : {}) }, p.id);
         return;
       }
       case 'boom':
         return this.onBoom(p, msg, now);
+      case 'loadout':
+        p.loadout = sanitizeLoadout(msg.lo);
+        return;
       case 'selfDamage': {
         if (!p.alive || !finite(msg.amount) || msg.amount <= 0) return;
         const cause: KillKind = msg.cause === 'void' ? 'void' : msg.cause === 'dog' ? 'dog' : 'fall';
@@ -222,6 +231,8 @@ export class Session {
         p.lastDamageAt = 0;
         p.dance = null;
         p.state = { p: msg.p, yaw: msg.yaw, pitch: 0, f: 0 };
+        // Mines last only for the life they were planted in (clients drop them on 'spawned' too).
+        for (const [id, g] of p.grenades) if (g.mine) p.grenades.delete(id);
         this.broadcast({ t: 'spawned', id: p.id, p: msg.p, yaw: msg.yaw });
         return;
       }
@@ -234,12 +245,13 @@ export class Session {
     if (!['cabeca', 'tronco', 'bracos', 'pernas', 'virilha'].includes(region)) return;
     // Fire-rate check: no more confirmed hits per second than the rifle can fire (+ slack for jitter).
     p.hitTimes = p.hitTimes.filter((t) => now - t < 1000);
-    if (p.hitTimes.length >= Math.ceil(RIFLE.cadencia / 60) + 2) return;
+    const rifle = rifleData(p.loadout.rifle);
+    if (p.hitTimes.length >= Math.ceil(rifle.cadencia / 60) + 2) return;
     // Distance check against the server's view of both players.
     const serverDist = dist3(eye(p.state), chest(target.state));
-    if (serverDist > RIFLE.alcanceMaximo || Math.abs(serverDist - reportedDist) > LAG_SLACK + serverDist * 0.1) return;
+    if (serverDist > rifle.alcanceMaximo || Math.abs(serverDist - reportedDist) > LAG_SLACK + serverDist * 0.1) return;
     p.hitTimes.push(now);
-    const dist = Math.min(reportedDist, RIFLE.alcanceMaximo);
+    const dist = Math.min(reportedDist, rifle.alcanceMaximo);
     const kind: KillKind = region === 'cabeca' ? 'head' : region === 'virilha' ? 'groin' : 'gun';
     const awards: Award[] = [];
     if (kind === 'head') awards.push({ label: 'headshot', value: SCORE.headshot });
@@ -247,26 +259,29 @@ export class Session {
     if (dist > SCORE.longShotDistance) awards.push({ label: 'longShot', value: SCORE.longShot });
     // Went through wood/glass: never less than the weapon allows, never more than a clean hit.
     const keep = finite(reportedKeep) ? Math.min(1, Math.max(PEN_MIN_KEEP, reportedKeep!)) : 1;
-    this.damage(target, p, computeDamage(RIFLE, dist, region, keep), kind, eye(p.state), awards);
+    this.damage(target, p, computeDamage(rifle, dist, region, keep), kind, eye(p.state), awards);
   }
 
   private onStab(p: SPlayer, targetId: number, behind: boolean, now: number) {
     const target = this.players.get(targetId);
     if (!target || target === p || !p.alive || !target.alive) return;
-    if (now - p.lastStab < KNIFE.intervalo * 1000 * 0.75) return;
+    const knife = knifeData(p.loadout.faca);
+    if (now - p.lastStab < knife.intervalo * 1000 * 0.75) return;
     const d = Math.hypot(p.state.p[0] - target.state.p[0], p.state.p[2] - target.state.p[2]);
-    if (d > KNIFE.alcanceInvestida + 1.5) return;
+    if (d > knife.alcanceInvestida + 1.5) return;
     p.lastStab = now;
     const awards: Award[] = [{ label: 'knife', value: SCORE.knife }];
     if (behind) awards.push({ label: 'backstab', value: SCORE.backstab });
-    this.damage(target, p, KNIFE.letal ? LETHAL_DAMAGE : 55, 'knife', eye(p.state), awards);
+    this.damage(target, p, knife.letal ? LETHAL_DAMAGE : 55, 'knife', eye(p.state), awards);
   }
 
   private onBoom(p: SPlayer, msg: Extract<ClientMsg, { t: 'boom' }>, now: number) {
     const g = p.grenades.get(msg.id);
     if (!g || !vec(msg.p) || !Array.isArray(msg.hits)) return;
     const t = (now - g.thrownAt) / 1000;
-    if (g.impact) {
+    if (g.mine) {
+      if (dist3(g.origin, msg.p) > 1.5) return; // mines don't move
+    } else if (g.impact) {
       // Impact grenades go off whenever they touch something: the blast must be somewhere the throw
       // could have reached by now (speed, gravity, latency slack), within the flight time limit.
       const reach = g.speed * t + 4.9 * t * t + 3;

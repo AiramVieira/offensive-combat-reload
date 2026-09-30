@@ -167,7 +167,7 @@ export class Hud {
   }
 
   /** Big animated banner ("NO PÁSSARO!", "HUMILHADO!"). */
-  showBanner(text: string, variant: 'bird' | 'taunt') {
+  showBanner(text: string, variant: 'bird' | 'taunt' | 'level') {
     this.banner.textContent = text;
     this.banner.className = variant;
     void this.banner.offsetWidth;

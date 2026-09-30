@@ -1,0 +1,61 @@
+{
+  "_doc": "Evolução das armas. xp = pontos acumulados COM ESSA ARMA para liberar o nível (cada abate rende os pontos do abate, bônus incluídos, só para a arma que matou).",
+  "rifle": [
+    {
+      "nivel": 1, "xp": 0, "nome": "Rifle Padrão", "icone": "🔫",
+      "descricao": "O de sempre. Mira de ferro e fé.",
+      "mira": "ferro", "visual": "padrao",
+      "dano": [30, 20], "pente": 30, "cadencia": 700, "recuo": 1, "dispersao": 1, "zoom": 0.85, "recarga": 1
+    },
+    {
+      "nivel": 2, "xp": 400, "nome": "Rifle Remendado com Fita", "icone": "🩹",
+      "descricao": "Metade silver tape, metade coragem. Libera a mira de ponto vermelho.",
+      "mira": "pontoVermelho", "visual": "fita",
+      "dano": [31, 21], "pente": 30, "cadencia": 700, "recuo": 0.95, "dispersao": 0.92, "zoom": 0.8, "recarga": 1
+    },
+    {
+      "nivel": 3, "xp": 1000, "nome": "Rifle da Tia do Zap", "icone": "🌸",
+      "descricao": "Cor-de-rosa, com mira holográfica de carinha feliz. Bom dia! Pente de 32.",
+      "mira": "holo", "visual": "tia",
+      "dano": [32, 22], "pente": 32, "cadencia": 710, "recuo": 0.9, "dispersao": 0.86, "zoom": 0.78, "recarga": 0.94
+    },
+    {
+      "nivel": 4, "xp": 1800, "nome": "Rifle Pisca-Pisca de Natal", "icone": "🎄",
+      "descricao": "Enrolado em luzinhas. Holográfica com lupa de 1,5x e recuo bem mais manso.",
+      "mira": "holoLupa", "visual": "natal",
+      "dano": [33, 23], "pente": 32, "cadencia": 720, "recuo": 0.82, "dispersao": 0.8, "zoom": 0.66, "recarga": 0.92
+    },
+    {
+      "nivel": 5, "xp": 2800, "nome": "Rifle Tunado com Adesivo de Chama", "icone": "🔥",
+      "descricao": "Adesivo de chama dá +10 de velocidade, todo mundo sabe. Luneta 2x, pente de 35.",
+      "mira": "luneta2x", "visual": "chamas",
+      "dano": [34, 24], "pente": 35, "cadencia": 750, "recuo": 0.76, "dispersao": 0.74, "zoom": 0.5, "recarga": 0.9
+    },
+    {
+      "nivel": 6, "xp": 4000, "nome": "Rifle com Luneta do Vovô", "icone": "👴",
+      "descricao": "Madeira envernizada e a luneta de latão que o vovô usava para espiar o vizinho. 3x.",
+      "mira": "luneta3x", "visual": "vovo",
+      "dano": [35, 25], "pente": 35, "cadencia": 760, "recuo": 0.7, "dispersao": 0.68, "zoom": 0.38, "recarga": 0.88
+    },
+    {
+      "nivel": 7, "xp": 5500, "nome": "Rifle Dourado Ostentação", "icone": "👑",
+      "descricao": "Todo de ouro, luneta 4x e pente de 40. Não combina com nada, e é isso que importa.",
+      "mira": "luneta4x", "visual": "ouro",
+      "dano": [37, 26], "pente": 40, "cadencia": 780, "recuo": 0.62, "dispersao": 0.6, "zoom": 0.3, "recarga": 0.85
+    }
+  ],
+  "faca": [
+    { "nivel": 1, "xp": 0, "nome": "Faca de Cozinha", "icone": "🔪", "descricao": "Pegou emprestada da cozinha e não devolveu.", "modelo": "faca", "som": "faca", "alcance": 1.8, "alcanceInvestida": 3.2 },
+    { "nivel": 2, "xp": 300, "nome": "Colher de Pau da Vó", "icone": "🥄", "descricao": "Quem já levou uma sabe: é letal. Um pouco mais de alcance.", "modelo": "colher", "som": "madeira", "alcance": 1.95, "alcanceInvestida": 3.5 },
+    { "nivel": 3, "xp": 750, "nome": "Frango de Borracha", "icone": "🐔", "descricao": "Aperta e grita. Cada golpe é uma humilhação sonora.", "modelo": "frango", "som": "frango", "alcance": 2.1, "alcanceInvestida": 3.8 },
+    { "nivel": 4, "xp": 1350, "nome": "Baguete Amanhecida", "icone": "🥖", "descricao": "Dura de ontem. Crocante por fora, fatal por dentro.", "modelo": "baguete", "som": "crocante", "alcance": 2.25, "alcanceInvestida": 4.1 },
+    { "nivel": 5, "xp": 2100, "nome": "Peixe Congelado", "icone": "🐟", "descricao": "Tirado direto do freezer. O tapa é gelado e o cheiro também.", "modelo": "peixe", "som": "tapa", "alcance": 2.4, "alcanceInvestida": 4.4 },
+    { "nivel": 6, "xp": 3000, "nome": "Macarrão de Piscina", "icone": "🟢", "descricao": "Espuma de 1,5 metro. Parece inofensivo. Não é.", "modelo": "macarrao", "som": "boing", "alcance": 2.55, "alcanceInvestida": 4.7 },
+    { "nivel": 7, "xp": 4100, "nome": "Sabre de Luz Paraguaio", "icone": "🗡️", "descricao": "Comprado na 25 de Março. Faz vuuum de verdade (com a boca). Maior alcance de todos.", "modelo": "sabre", "som": "sabre", "alcance": 2.7, "alcanceInvestida": 5.0 }
+  ],
+  "granada": [
+    { "nivel": 1, "xp": 0, "nome": "Granada de Fragmentação", "icone": "💣", "descricao": "Explode no primeiro contato. Cozinhe demais e ela explode na sua mão.", "tipo": "granada" },
+    { "nivel": 2, "xp": 500, "nome": "Mina Terrestre", "icone": "🧨", "descricao": "G planta uma mina no chão. Arma em 1 s e explode quando um inimigo pisa perto. Fica no mapa enquanto você estiver vivo e some quando você renasce.", "tipo": "mina" },
+    { "nivel": 3, "xp": 1300, "nome": "Dose Dupla", "icone": "✌️", "descricao": "Um G, duas granadas: lança uma e logo em seguida a outra, gastando uma carga só.", "tipo": "dupla" }
+  ]
+}

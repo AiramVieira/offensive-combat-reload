@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GROUP, groups } from '@shared/constants';
 import type { GrenadeData } from '@shared/weapons';
+import type { GrenadeKind } from '@shared/progression';
 import { toon } from '../render/materials';
 import type { Physics } from '../world/physics';
 
@@ -16,11 +17,16 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 
 export type ThrowerEvent =
   | { type: 'pin' }
-  | { type: 'throw'; fuseLeft: number }
-  | { type: 'inHand' };
+  /** double: grenade level 3 ("Dose Dupla"), a second grenade follows this one for the same charge. */
+  | { type: 'throw'; fuseLeft: number; double: boolean }
+  | { type: 'inHand' }
+  /** Grenade level 2: plant a land mine at your feet (no cooking). */
+  | { type: 'mine' };
 
 export class GrenadeThrower {
   count: number;
+  /** Progression level of the grenade slot: frag, land mine or double frag. */
+  kind: GrenadeKind = 'granada';
   /** Seconds since the pin was pulled while still in hand, or null. */
   cookT: number | null = null;
   /** Seconds since release, for the follow-through animation, or null. */
@@ -79,6 +85,16 @@ export class GrenadeThrower {
     }
 
     if (this.cookT === null) {
+      if (this.kind === 'mina') {
+        // A mine is planted on the press, nothing to cook.
+        if (pressed && canStart && this.count > 0 && this.cooldown <= 0 && this.throwT === null) {
+          this.count--;
+          this.cooldown = d.intervalo;
+          this.throwT = 0;
+          return { type: 'mine' };
+        }
+        return null;
+      }
       if ((pressed || held) && canStart && this.count > 0 && this.cooldown <= 0 && this.throwT === null) {
         this.cookT = 0;
         this.count--;
@@ -102,7 +118,7 @@ export class GrenadeThrower {
       this.releaseQueued = false;
       this.throwT = 0;
       this.cooldown = d.intervalo;
-      return { type: 'throw', fuseLeft };
+      return { type: 'throw', fuseLeft, double: this.kind === 'dupla' };
     }
     return null;
   }

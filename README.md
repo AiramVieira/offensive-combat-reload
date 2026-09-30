@@ -33,6 +33,24 @@ O servidor ([server/](server/)) é a autoridade sobre **vida, dano, abates, pont
 
 **Ainda não feito** (próxima etapa da seção 14): predição e reconciliação com o servidor simulando o movimento (hoje a posição é confiada ao cliente); compensação de lag (rewind das hitboxes no servidor); mensagens binárias; fim de partida (limite de abates e tempo) e votação de mapa.
 
+## Progressão das armas
+
+Cada abate rende pontos (o abate mais os bônus: tiro na cabeça, "no pássaro", facada pelas costas…) **só para a arma que matou**. Quem só usa o rifle só evolui o rifle; para evoluir a faca e a granada é preciso matar com elas. O progresso fica salvo no navegador (`localStorage`, chave `oc.profile`) e vale em todos os modos: campo de tiro, contra bots e online.
+
+O **Arsenal**, no menu (início e pausa), mostra cada arma: nível equipado, barra de pontos até o próximo nível e todos os níveis (passe o mouse para ler o que cada um faz). Clique num nível liberado para equipá-lo; ao subir de nível, o novo é equipado automaticamente se você estava usando o seu melhor.
+
+| Nível | Rifle (mira e acabamento; dano, pente, cadência e recuo melhoram a cada nível) | Faca (o alcance cresce a cada nível) | Granada |
+|---|---|---|---|
+| 1 | Rifle Padrão: mira de ferro | Faca de Cozinha | Granada de Fragmentação (explode no contato) |
+| 2 | Remendado com Fita: ponto vermelho | Colher de Pau da Vó | **Mina Terrestre**: G planta; arma em 1 s e explode quando um inimigo pisa perto; some quando você renasce (continua no mapa enquanto você está morto); até 3 no mapa |
+| 3 | da Tia do Zap: holográfica de carinha feliz, rosa | **Frango de Borracha** (grita a cada golpe) | **Dose Dupla**: um G lança duas granadas gastando uma carga |
+| 4 | Pisca-Pisca de Natal: holográfica com lupa 1,5x | Baguete Amanhecida | |
+| 5 | Tunado com Adesivo de Chama: luneta 2x | Peixe Congelado | |
+| 6 | com Luneta do Vovô: luneta 3x, madeira e latão | Macarrão de Piscina | |
+| 7 | Dourado Ostentação: luneta 4x, pente de 40 | Sabre de Luz Paraguaio | |
+
+Pontos necessários: rifle 400 / 1000 / 1800 / 2800 / 4000 / 5500; faca 300 / 750 / 1350 / 2100 / 3000 / 4100; granada 500 / 1300. Com luneta, mirar mostra a visão da luneta. Tudo fica em [shared/data/progression.json](shared/data/progression.json). Online, o cliente informa ao servidor os níveis equipados, e o servidor aplica o dano, a cadência e o alcance de cada um; como o progresso ainda mora no navegador, ele é confiado ao jogador por enquanto.
+
 ## Bots
 
 No modo **Contra bots**, cada bot é um jogador completo: usa o mesmo movimento, o mesmo Rifle Padrão (cadência, pente, recarga, dispersão e recuo), as mesmas hitboxes e as mesmas regras de pontos. Eles **caçam qualquer um**, incluindo os outros bots. Andam por uma malha de navegação (recast-navigation) gerada na hora a partir dos colisores do mapa. Só enxergam quem está no campo de visão e sem parede no meio, e percebem quem atira neles. Entre as reações: mirar com velocidade limitada, controlar o recuo, disparar em rajadas, dar facada de perto, recuar com pouca vida, perseguir até a última posição vista e dançar em cima dos corpos. A dificuldade muda o tempo de reação, a precisão, o campo de visão e a agressividade. `Tab` mostra o placar de todos, e `F4` mostra a malha de navegação. Por enquanto os bots existem só offline; bots nas sessões online precisam de simulação no servidor.
