@@ -1,17 +1,19 @@
-// Character editor (Perfil → Personalizar): body (height, build, skin), hair, the eight clothing slots with
-// colors and the PCD mode, with a live 3D preview and what each choice does in the game.
+// Character editor (Perfil → Personalizar), in the spirit of The Sims' Create-a-Sim: a big 3D stage that
+// zooms to the part being edited, category tabs, and every option as a thumbnail rendered from the
+// character itself (in its current colors), with color swatches under each group. Shows what the look does
+// in the game (health, eye height, hitbox, reload, speed) as you choose.
 import * as THREE from 'three';
 import {
   ARM_LOSSES,
   BUILDS,
   CATALOG,
   defaultAppearance,
+  EYE_COLORS,
   HAIR,
   HAIR_COLORS,
   HEIGHTS,
   LEG_LOSSES,
   SKIN_TONES,
-  SLOTS,
   bodyStats,
   hitboxSize,
   type Appearance,
@@ -19,7 +21,7 @@ import {
 } from '@shared/appearance';
 import { MOVE } from '@shared/constants';
 import type { Sex } from '@shared/protocol';
-import { Avatar } from '../entities/avatar';
+import { Avatar, disposeAvatar } from '../entities/avatar';
 import { api } from '../net/api';
 import { errorText } from './auth';
 import { getLang } from './strings';
@@ -27,64 +29,69 @@ import { getLang } from './strings';
 /** Labels in pt-BR and en (the editor has many; they live here instead of strings.ts). */
 const L: Record<string, [string, string]> = {
   title: ['Personalizar personagem', 'Customize character'],
-  body: ['Corpo', 'Body'],
+  tabBody: ['Corpo', 'Body'],
+  tabHair: ['Rosto e cabelo', 'Face & hair'],
+  tabTop: ['Camiseta', 'Top'],
+  tabBottom: ['Parte de baixo', 'Bottoms'],
+  tabShoes: ['Sapatos', 'Shoes'],
+  tabAcc: ['Acessórios', 'Accessories'],
+  tabPcd: ['Modo PCD', 'PCD mode'],
   height: ['Altura', 'Height'],
   build: ['Biotipo', 'Build'],
   skin: ['Cor da pele', 'Skin color'],
-  hair: ['Cabelo', 'Hair'],
+  hairStyle: ['Cabelo', 'Hair'],
   hairColor: ['Cor do cabelo', 'Hair color'],
-  clothes: ['Roupas', 'Clothes'],
-  pcd: ['Modo PCD', 'PCD mode'],
-  pcdHint: ['Personagem sem um braço, uma mão ou uma perna. Hitbox menor; sem mão ou braço recarrega 30% mais devagar, sem perna anda 25% mais devagar.', 'A character missing an arm, a hand or a leg. Smaller hitbox; no hand or arm reloads 30% slower, no leg moves 25% slower.'],
+  eyeColor: ['Cor dos olhos', 'Eye color'],
+  color: ['Cor', 'Color'],
   arm: ['Braço ou mão', 'Arm or hand'],
   leg: ['Perna', 'Leg'],
+  pcdHint: [
+    'Personagem sem um braço, uma mão ou uma perna. A hitbox fica menor; sem mão ou braço recarrega 30% mais devagar, sem perna anda 25% mais devagar. Aparece também nas mãos em primeira pessoa.',
+    'A character missing an arm, a hand or a leg. Smaller hitbox; no hand or arm reloads 30% slower, no leg moves 25% slower. Also shown on the first-person hands.',
+  ],
   save: ['SALVAR', 'SAVE'],
   cancel: ['Cancelar', 'Cancel'],
   reset: ['Restaurar padrão', 'Reset to default'],
   saved: ['Personagem salvo.', 'Character saved.'],
   effects: ['No jogo', 'In the game'],
   health: ['Vida', 'Health'],
-  eye: ['Altura da visão', 'Eye height'],
+  eye: ['Visão a', 'Eye at'],
   reload: ['Recarga', 'Reload'],
   speed: ['Velocidade', 'Speed'],
   hitbox: ['Hitbox', 'Hitbox'],
-  dragHint: ['Arraste para girar', 'Drag to rotate'],
+  dragHint: ['Arraste para girar · role para aproximar', 'Drag to rotate · scroll to zoom'],
   none: ['Nenhum', 'None'],
   noneF: ['Nenhuma', 'None'],
   pants: ['Calças', 'Pants'],
   shorts: ['Bermudas', 'Shorts'],
   skirts: ['Saias', 'Skirts'],
-  // Body
   pequeno: ['Pequeno', 'Short'],
   medio: ['Médio', 'Medium'],
   alto: ['Alto', 'Tall'],
   magro: ['Magro', 'Slim'],
   gordo: ['Gordo', 'Heavy'],
-  // Slots
-  camiseta: ['Camiseta', 'Shirt'],
-  baixo: ['Calça, bermuda ou saia', 'Pants, shorts or skirt'],
+  camiseta: ['Camiseta', 'Top'],
   sapatos: ['Sapatos', 'Shoes'],
   chapeu: ['Chapéu', 'Hat'],
   oculos: ['Óculos', 'Glasses'],
   pulseira: ['Pulseira', 'Bracelet'],
-  // Pieces
   basica: ['Básica', 'Basic tee'],
   regata: ['Regata', 'Tank top'],
   polo: ['Polo', 'Polo'],
-  calcaJeans: ['Calça jeans', 'Jeans'],
-  calcaCargo: ['Calça cargo', 'Cargo pants'],
-  calcaMoletom: ['Calça de moletom', 'Sweatpants'],
-  bermudaPraia: ['Bermuda de praia', 'Board shorts'],
-  bermudaJeans: ['Bermuda jeans', 'Denim shorts'],
-  bermudaEsportiva: ['Bermuda esportiva', 'Sport shorts'],
-  saiaLapis: ['Saia lápis', 'Pencil skirt'],
-  saiaRodada: ['Saia rodada', 'Circle skirt'],
-  saiaPregas: ['Saia de pregas', 'Pleated skirt'],
+  calcaJeans: ['Jeans', 'Jeans'],
+  calcaCargo: ['Cargo', 'Cargo'],
+  calcaMoletom: ['Moletom', 'Sweatpants'],
+  bermudaPraia: ['Praia', 'Board'],
+  bermudaJeans: ['Jeans', 'Denim'],
+  bermudaEsportiva: ['Esportiva', 'Sport'],
+  saiaLapis: ['Lápis', 'Pencil'],
+  saiaRodada: ['Rodada', 'Circle'],
+  saiaPregas: ['Pregas', 'Pleated'],
   tenis: ['Tênis', 'Sneakers'],
   bota: ['Bota', 'Boots'],
   chinelo: ['Chinelo', 'Flip-flops'],
   bone: ['Boné', 'Cap'],
-  palha: ['Chapéu de palha', 'Straw hat'],
+  palha: ['Palha', 'Straw hat'],
   gorro: ['Gorro', 'Beanie'],
   escuros: ['Escuros', 'Sunglasses'],
   redondos: ['Redondos', 'Round'],
@@ -92,24 +99,45 @@ const L: Record<string, [string, string]> = {
   couro: ['Couro', 'Leather'],
   micangas: ['Miçangas', 'Beads'],
   relogio: ['Relógio', 'Watch'],
-  // Hair
   curto: ['Curto', 'Short'],
   topete: ['Topete', 'Quiff'],
   blackPower: ['Black power', 'Afro'],
   rabo: ['Rabo de cavalo', 'Ponytail'],
-  longo: ['Longo solto', 'Long'],
+  longo: ['Longo', 'Long'],
   coque: ['Coque', 'Bun'],
-  // PCD
-  bracoEsq: ['Sem o braço esquerdo', 'No left arm'],
-  bracoDir: ['Sem o braço direito', 'No right arm'],
-  maoEsq: ['Sem a mão esquerda', 'No left hand'],
-  maoDir: ['Sem a mão direita', 'No right hand'],
-  pernaEsq: ['Sem a perna esquerda', 'No left leg'],
-  pernaDir: ['Sem a perna direita', 'No right leg'],
+  complete: ['Completo', 'Full'],
+  bracoEsq: ['Sem braço esq.', 'No left arm'],
+  bracoDir: ['Sem braço dir.', 'No right arm'],
+  maoEsq: ['Sem mão esq.', 'No left hand'],
+  maoDir: ['Sem mão dir.', 'No right hand'],
+  pernaEsq: ['Sem perna esq.', 'No left leg'],
+  pernaDir: ['Sem perna dir.', 'No right leg'],
 };
 const l = (key: string) => (L[key] ?? [key, key])[getLang() === 'en' ? 1 : 0];
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const clone = (a: Appearance): Appearance => JSON.parse(JSON.stringify(a));
+
+/** Clothing colors offered as swatches (any color can still be picked). */
+const CLOTH_COLORS = ['#f4f1ea', '#222226', '#7a8a96', '#b3312a', '#ff7a1a', '#ffd23f', '#2f9b6f', '#4a5a32', '#2f9bff', '#2d3b6b', '#3d5a8a', '#8a3a8a', '#d86aa8', '#6b4226', '#e2c07a', '#5a4a6a'];
+
+// --- Camera framing per part of the body ---------------------------------------------------------------
+
+type Focus = 'full' | 'head' | 'torso' | 'legs' | 'feet';
+/** Look-at height and distance, for an average body (scaled by the character's height). */
+const FRAMES: Record<Focus, { y: number; dist: number }> = {
+  full: { y: 0.95, dist: 5.4 },
+  head: { y: 1.62, dist: 1.7 },
+  torso: { y: 1.22, dist: 2.7 },
+  legs: { y: 0.55, dist: 3.0 },
+  feet: { y: 0.12, dist: 1.6 },
+};
+
+function setupScene(scene: THREE.Scene) {
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 2.2));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+  sun.position.set(2, 4, -3);
+  scene.add(sun);
+}
 
 /** What the look does in the game, in one line. */
 function effectsText(a: Appearance): string {
@@ -124,15 +152,20 @@ function effectsText(a: Appearance): string {
   return parts.join(' · ');
 }
 
-/** Small 3D stage that shows the avatar turning (drag to rotate). */
-class Preview {
+/** The big stage: the character turning, the camera gliding to the part being edited. */
+class Stage {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+  private camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
   private avatar: Avatar | null = null;
-  /** 0 = facing the camera. */
-  private yaw = 0.5;
+  private scale = 1;
+  private yaw = 0.35;
+  private zoom = 1;
+  private focusName: Focus = 'full';
+  private camY = FRAMES.full.y;
+  private camDist = FRAMES.full.dist;
   private dragging = false;
+  private idleSpin = true;
   private lastX = 0;
   private raf = 0;
   private last = performance.now();
@@ -141,15 +174,14 @@ class Preview {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 2.2));
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(2, 4, -3);
-    this.scene.add(sun);
-    // Frames the tallest body with a hat (about 2.3 m) with room to spare.
-    this.camera.position.set(0, 1.15, -5.6);
-    this.camera.lookAt(0, 1.05, 0);
+    setupScene(this.scene);
+    // A round floor under the feet.
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ color: 0x9fc6ea, transparent: true, opacity: 0.6 }));
+    floor.rotation.x = -Math.PI / 2;
+    this.scene.add(floor);
     canvas.onpointerdown = (e) => {
       this.dragging = true;
+      this.idleSpin = false;
       this.lastX = e.clientX;
       canvas.setPointerCapture(e.pointerId);
     };
@@ -159,33 +191,34 @@ class Preview {
       this.lastX = e.clientX;
     };
     canvas.onpointerup = () => (this.dragging = false);
+    canvas.onwheel = (e) => {
+      e.preventDefault();
+      this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.5, 1.8);
+    };
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
-      if (!this.dragging) this.yaw += dt * 0.4;
-      this.draw();
+      if (this.idleSpin && !this.dragging) this.yaw += dt * 0.35;
+      this.draw(dt);
     };
     this.raf = requestAnimationFrame(loop);
   }
 
   show(look: Appearance, sex: Sex) {
-    if (this.avatar) this.disposeAvatar(this.avatar);
+    if (this.avatar) disposeAvatar(this.avatar);
     this.avatar = new Avatar(this.scene, look, sex);
-    this.avatar.idle();
+    this.avatar.idle(false);
     this.avatar.visible = true;
+    this.scale = bodyStats(look).scale;
   }
 
-  private disposeAvatar(a: Avatar) {
-    this.scene.remove(a.root);
-    a.root.traverse((o) => {
-      const m = o as THREE.Mesh;
-      m.geometry?.dispose();
-      (m.material as THREE.Material | undefined)?.dispose?.();
-    });
+  focus(f: Focus) {
+    this.focusName = f;
+    this.zoom = 1;
   }
 
-  private draw() {
+  private draw(dt: number) {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
     if (!w || !h) return;
@@ -194,16 +227,126 @@ class Preview {
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
     }
+    // Glide toward the framing of the current part.
+    const target = FRAMES[this.focusName];
+    const k = 1 - Math.exp(-dt * 6);
+    this.camY += (target.y * this.scale - this.camY) * k;
+    this.camDist += (target.dist * this.zoom - this.camDist) * k;
+    this.camera.position.set(0, this.camY + 0.08, -this.camDist);
+    this.camera.lookAt(0, this.camY, 0);
     if (this.avatar) this.avatar.root.rotation.y = this.yaw;
     this.renderer.render(this.scene, this.camera);
   }
 
   dispose() {
     cancelAnimationFrame(this.raf);
-    if (this.avatar) this.disposeAvatar(this.avatar);
+    if (this.avatar) disposeAvatar(this.avatar);
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 }
+
+/** Renders option thumbnails off screen, a few per frame, cached by look and framing. */
+class Thumbnails {
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
+  private cache = new Map<string, string>();
+  private queue: { key: string; look: Appearance; sex: Sex; focus: Focus; done: (url: string) => void }[] = [];
+  private raf = 0;
+  private disposed = false;
+
+  constructor() {
+    const canvas = document.createElement('canvas');
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    this.renderer.setPixelRatio(1);
+    this.renderer.setSize(150, 150, false);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    setupScene(this.scene);
+  }
+
+  request(look: Appearance, sex: Sex, focus: Focus, done: (url: string) => void) {
+    const key = `${sex}|${focus}|${JSON.stringify(look)}`;
+    const hit = this.cache.get(key);
+    if (hit) return done(hit);
+    this.queue.push({ key, look: clone(look), sex, focus, done });
+    if (!this.raf) this.raf = requestAnimationFrame(() => this.work());
+  }
+
+  private work() {
+    this.raf = 0;
+    if (this.disposed) return;
+    const start = performance.now();
+    // A few thumbnails per frame keeps the page responsive.
+    while (this.queue.length && performance.now() - start < 24) {
+      const job = this.queue.shift()!;
+      const cached = this.cache.get(job.key);
+      if (cached) {
+        job.done(cached);
+        continue;
+      }
+      const a = new Avatar(this.scene, job.look, job.sex);
+      a.idle(false);
+      a.visible = true;
+      a.root.rotation.y = job.focus === 'head' ? 0.25 : 0.4;
+      // Full-body thumbnails share one framing, so heights compare; close-ups follow the height.
+      const scale = job.focus === 'full' ? 1 : bodyStats(job.look).scale;
+      const fr = FRAMES[job.focus];
+      const dist = job.focus === 'full' ? 5.6 : fr.dist * (job.focus === 'head' ? 0.85 : 0.8);
+      this.camera.position.set(0, fr.y * scale + 0.06, -dist);
+      this.camera.lookAt(0, fr.y * scale, 0);
+      this.renderer.render(this.scene, this.camera);
+      const url = this.renderer.domElement.toDataURL('image/png');
+      disposeAvatar(a);
+      this.cache.set(job.key, url);
+      job.done(url);
+    }
+    if (this.queue.length) this.raf = requestAnimationFrame(() => this.work());
+  }
+
+  /** Forget pending thumbnails (the tab or the look changed). */
+  clearQueue() {
+    this.queue.length = 0;
+  }
+
+  dispose() {
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+  }
+}
+
+// --- Editor -------------------------------------------------------------------------------------------------
+
+type Tab = 'body' | 'hair' | 'top' | 'bottom' | 'shoes' | 'acc' | 'pcd';
+const TABS: { id: Tab; icon: string; label: string; focus: Focus }[] = [
+  { id: 'body', icon: '🧍', label: 'tabBody', focus: 'full' },
+  { id: 'hair', icon: '💇', label: 'tabHair', focus: 'head' },
+  { id: 'top', icon: '👕', label: 'tabTop', focus: 'torso' },
+  { id: 'bottom', icon: '👖', label: 'tabBottom', focus: 'legs' },
+  { id: 'shoes', icon: '👟', label: 'tabShoes', focus: 'feet' },
+  { id: 'acc', icon: '🕶️', label: 'tabAcc', focus: 'head' },
+  { id: 'pcd', icon: '♿', label: 'tabPcd', focus: 'full' },
+];
+
+/** One group of thumbnail cards: each option is the current look with one thing changed. */
+interface CardGroup {
+  title: string;
+  options: { value: string; label: string; apply: (a: Appearance) => void; selected: (a: Appearance) => boolean }[];
+  focus: Focus;
+}
+
+interface ColorGroup {
+  title: string;
+  colors: readonly string[];
+  get: (a: Appearance) => string;
+  set: (a: Appearance, c: string) => void;
+  /** Hidden when there is nothing to color (no hat, no glasses...). */
+  visible?: (a: Appearance) => boolean;
+}
+
+type Group = CardGroup | ColorGroup;
 
 interface Options {
   look: Appearance;
@@ -215,155 +358,222 @@ interface Options {
 
 export function showCustomizer(root: HTMLElement, o: Options) {
   let look = clone(o.look);
+  const sex = o.sex;
+  let tab: Tab = 'body';
   const card = root.closest('.home-card');
   card?.classList.add('wide');
 
-  const buttons = (group: string, values: readonly string[], current: string) =>
-    `<div class="seg" data-group="${group}">${values.map((v) => `<button type="button" data-v="${v}" aria-pressed="${v === current}">${esc(l(v))}</button>`).join('')}</div>`;
-  const swatches = (group: string, colors: readonly string[], current: string) =>
-    `<div class="swatches" data-group="${group}">${colors.map((c) => `<button type="button" class="swatch" data-v="${c}" style="background:${c}" aria-pressed="${c === current}" title="${c}"></button>`).join('')}<input type="color" data-group="${group}" value="${current}" /></div>`;
-  const slotSelect = (slot: Slot) => {
-    const piece = look.roupas[slot];
-    const opts = (ids: readonly string[]) => ids.map((id) => `<option value="${id}" ${id === piece.id ? 'selected' : ''}>${esc(id ? l(id) : l(slot === 'pulseira' || slot === 'camiseta' ? 'noneF' : 'none'))}</option>`).join('');
-    const list =
-      slot === 'baixo'
-        ? `<optgroup label="${l('pants')}">${opts(CATALOG.baixo.filter((x) => x.startsWith('calca')))}</optgroup><optgroup label="${l('shorts')}">${opts(CATALOG.baixo.filter((x) => x.startsWith('bermuda')))}</optgroup><optgroup label="${l('skirts')}">${opts(CATALOG.baixo.filter((x) => x.startsWith('saia')))}</optgroup>`
-        : opts(CATALOG[slot]);
-    return `<label class="slot"><span>${l(slot)}</span><select data-slot="${slot}">${list}</select><input type="color" data-slot-color="${slot}" value="${piece.cor}" ${piece.id ? '' : 'disabled'} /></label>`;
-  };
-  const pcdOn = () => !!(look.pcd.braco || look.pcd.perna);
-
-  const render = () => {
-    root.innerHTML = `
-      <div class="customizer">
-        <div class="cz-preview">
-          <canvas id="cz-canvas"></canvas>
-          <p class="hint">${l('dragHint')}</p>
-          <p class="cz-effects"><b>${l('effects')}:</b> <span id="cz-effects">${esc(effectsText(look))}</span></p>
+  root.innerHTML = `
+    <div class="customizer">
+      <div class="cz-stage">
+        <canvas id="cz-canvas"></canvas>
+        <p class="hint">${l('dragHint')}</p>
+        <p class="cz-effects"><b>${l('effects')}:</b> <span id="cz-effects"></span></p>
+        <div class="cz-actions">
+          <button id="cz-save" class="small-btn">${l('save')}</button>
+          <button id="cz-reset" class="link-btn">${l('reset')}</button>
+          <button id="cz-cancel" class="link-btn">${l('cancel')}</button>
         </div>
-        <div class="cz-controls">
-          <h3>${l('title')}</h3>
-          <h4>${l('body')}</h4>
-          <div class="cz-row"><span>${l('height')}</span>${buttons('altura', HEIGHTS, look.altura)}</div>
-          <div class="cz-row"><span>${l('build')}</span>${buttons('biotipo', BUILDS, look.biotipo)}</div>
-          <div class="cz-row"><span>${l('skin')}</span>${swatches('pele', SKIN_TONES, look.pele)}</div>
-          <h4>${l('hair')}</h4>
-          <div class="cz-row"><span></span>${buttons('cabelo', HAIR[o.sex], look.cabelo.id)}</div>
-          <div class="cz-row"><span>${l('hairColor')}</span>${swatches('cabeloCor', HAIR_COLORS, look.cabelo.cor)}</div>
-          <h4>${l('clothes')}</h4>
-          ${SLOTS.map(slotSelect).join('')}
-          <h4><label class="check"><input id="cz-pcd" type="checkbox" ${pcdOn() ? 'checked' : ''} /> ${l('pcd')}</label></h4>
-          <p class="hint">${l('pcdHint')}</p>
-          <div id="cz-pcd-options" class="${pcdOn() ? '' : 'hidden'}">
-            <label class="slot"><span>${l('arm')}</span><select id="cz-arm">${ARM_LOSSES.map((v) => `<option value="${v}" ${v === look.pcd.braco ? 'selected' : ''}>${esc(v ? l(v) : l('none'))}</option>`).join('')}</select></label>
-            <label class="slot"><span>${l('leg')}</span><select id="cz-leg">${LEG_LOSSES.map((v) => `<option value="${v}" ${v === look.pcd.perna ? 'selected' : ''}>${esc(v ? l(v) : l('noneF'))}</option>`).join('')}</select></label>
-          </div>
-          <div class="cz-actions">
-            <button id="cz-save" class="small-btn">${l('save')}</button>
-            <button id="cz-reset" class="link-btn">${l('reset')}</button>
-            <button id="cz-cancel" class="link-btn">${l('cancel')}</button>
-          </div>
-        </div>
-      </div>`;
+      </div>
+      <div class="cz-panel">
+        <h3>${l('title')}</h3>
+        <nav class="cz-tabs" role="tablist">
+          ${TABS.map((tb) => `<button type="button" role="tab" data-tab="${tb.id}" title="${esc(l(tb.label))}"><span class="cz-icon">${tb.icon}</span><span>${esc(l(tb.label))}</span></button>`).join('')}
+        </nav>
+        <div id="cz-content" class="cz-content"></div>
+      </div>
+    </div>`;
+
+  const stage = new Stage(root.querySelector<HTMLCanvasElement>('#cz-canvas')!);
+  const thumbs = new Thumbnails();
+  const content = root.querySelector<HTMLElement>('#cz-content')!;
+  const effects = root.querySelector<HTMLElement>('#cz-effects')!;
+
+  // --- Groups of each tab --------------------------------------------------------------------------------
+  const pieceCards = (slot: Slot, focus: Focus, title: string, filter: (id: string) => boolean = () => true): CardGroup => ({
+    title,
+    focus,
+    options: CATALOG[slot].filter(filter).map((id) => ({
+      value: id,
+      label: id ? l(id) : l(slot === 'pulseira' ? 'noneF' : 'none'),
+      apply: (a) => (a.roupas[slot].id = id),
+      selected: (a) => a.roupas[slot].id === id,
+    })),
+  });
+  const pieceColor = (slot: Slot, title = l('color')): ColorGroup => ({
+    title,
+    colors: CLOTH_COLORS,
+    get: (a) => a.roupas[slot].cor,
+    set: (a, c) => (a.roupas[slot].cor = c),
+    visible: (a) => !!a.roupas[slot].id,
+  });
+
+  const groups = (): Group[] => {
+    switch (tab) {
+      case 'body':
+        return [
+          { title: l('height'), focus: 'full', options: HEIGHTS.map((v) => ({ value: v, label: l(v), apply: (a) => (a.altura = v), selected: (a) => a.altura === v })) },
+          { title: l('build'), focus: 'full', options: BUILDS.map((v) => ({ value: v, label: l(v), apply: (a) => (a.biotipo = v), selected: (a) => a.biotipo === v })) },
+          { title: l('skin'), colors: SKIN_TONES, get: (a) => a.pele, set: (a, c) => (a.pele = c) },
+        ];
+      case 'hair':
+        return [
+          { title: l('hairStyle'), focus: 'head', options: HAIR[sex].map((v) => ({ value: v, label: l(v), apply: (a) => (a.cabelo.id = v), selected: (a) => a.cabelo.id === v })) },
+          { title: l('hairColor'), colors: HAIR_COLORS, get: (a) => a.cabelo.cor, set: (a, c) => (a.cabelo.cor = c) },
+          { title: l('eyeColor'), colors: EYE_COLORS, get: (a) => a.olhos, set: (a, c) => (a.olhos = c) },
+        ];
+      case 'top':
+        return [pieceCards('camiseta', 'torso', l('camiseta')), pieceColor('camiseta')];
+      case 'bottom':
+        return [
+          pieceCards('baixo', 'legs', l('pants'), (id) => id.startsWith('calca')),
+          pieceCards('baixo', 'legs', l('shorts'), (id) => id.startsWith('bermuda')),
+          pieceCards('baixo', 'legs', l('skirts'), (id) => id.startsWith('saia')),
+          pieceColor('baixo'),
+        ];
+      case 'shoes':
+        return [pieceCards('sapatos', 'feet', l('sapatos')), pieceColor('sapatos')];
+      case 'acc':
+        return [
+          pieceCards('chapeu', 'head', l('chapeu')),
+          pieceColor('chapeu', `${l('color')}: ${l('chapeu')}`),
+          pieceCards('oculos', 'head', l('oculos')),
+          pieceColor('oculos', `${l('color')}: ${l('oculos')}`),
+          pieceCards('pulseira', 'torso', l('pulseira')),
+          pieceColor('pulseira', `${l('color')}: ${l('pulseira')}`),
+        ];
+      case 'pcd':
+        return [
+          { title: l('arm'), focus: 'torso', options: ARM_LOSSES.map((v) => ({ value: v, label: l(v || 'complete'), apply: (a) => (a.pcd.braco = v), selected: (a) => a.pcd.braco === v })) },
+          { title: l('leg'), focus: 'legs', options: LEG_LOSSES.map((v) => ({ value: v, label: l(v || 'complete'), apply: (a) => (a.pcd.perna = v), selected: (a) => a.pcd.perna === v })) },
+        ];
+    }
   };
 
-  render();
-  let preview = new Preview(root.querySelector<HTMLCanvasElement>('#cz-canvas')!);
-  const refresh = () => {
-    preview.show(look, o.sex);
-    root.querySelector('#cz-effects')!.textContent = effectsText(look);
-  };
-  refresh();
+  // --- Rendering ---------------------------------------------------------------------------------------------
+  let current: Group[] = [];
 
+  const loadThumbs = () => {
+    current.forEach((g, gi) => {
+      if (!('options' in g)) return;
+      g.options.forEach((op, oi) => {
+        const variant = clone(look);
+        op.apply(variant);
+        const img = content.querySelector<HTMLImageElement>(`.cz-card[data-g="${gi}"][data-o="${oi}"] img`);
+        if (img) thumbs.request(variant, sex, g.focus, (url) => (img.src = url));
+      });
+    });
+  };
+
+  const refreshSelection = () => {
+    current.forEach((g, gi) => {
+      if ('options' in g) {
+        g.options.forEach((op, oi) => content.querySelector(`.cz-card[data-g="${gi}"][data-o="${oi}"]`)?.setAttribute('aria-pressed', String(op.selected(look))));
+        return;
+      }
+      const sec = content.querySelector<HTMLElement>(`.cz-colors[data-g="${gi}"]`);
+      if (!sec) return;
+      sec.classList.toggle('hidden', !!g.visible && !g.visible(look));
+      sec.querySelectorAll<HTMLElement>('.swatch').forEach((s) => s.setAttribute('aria-pressed', String(s.dataset.c === g.get(look))));
+      sec.querySelector<HTMLInputElement>('input[type=color]')!.value = g.get(look);
+    });
+  };
+
+  let thumbTimer = 0;
+  /** The look changed: the stage now, the thumbnails (in the new colors) a moment later. */
+  const changed = () => {
+    stage.show(look, sex);
+    effects.textContent = effectsText(look);
+    refreshSelection();
+    clearTimeout(thumbTimer);
+    thumbTimer = window.setTimeout(() => {
+      thumbs.clearQueue();
+      loadThumbs();
+    }, 200);
+  };
+
+  const renderContent = () => {
+    thumbs.clearQueue();
+    current = groups();
+    content.innerHTML =
+      (tab === 'pcd' ? `<p class="hint cz-pcd-hint">${l('pcdHint')}</p>` : '') +
+      current
+        .map((g, gi) =>
+          'options' in g
+            ? `<section><h4>${esc(g.title)}</h4><div class="cz-grid">${g.options
+                .map(
+                  (op, oi) =>
+                    `<button type="button" class="cz-card" data-g="${gi}" data-o="${oi}" aria-pressed="${op.selected(look)}"><span class="cz-thumb"><img alt="" /></span><span class="cz-label">${esc(op.label)}</span></button>`,
+                )
+                .join('')}</div></section>`
+            : `<section class="cz-colors ${g.visible && !g.visible(look) ? 'hidden' : ''}" data-g="${gi}"><h4>${esc(g.title)}</h4><div class="swatches">${g.colors
+                .map((c) => `<button type="button" class="swatch" data-c="${c}" style="background:${c}" aria-pressed="${c === g.get(look)}" title="${c}"></button>`)
+                .join('')}<input type="color" value="${g.get(look)}" /></div></section>`,
+        )
+        .join('');
+    content.querySelectorAll<HTMLButtonElement>('.cz-card').forEach((btn) => {
+      btn.onclick = () => {
+        const g = current[Number(btn.dataset.g)] as CardGroup;
+        g.options[Number(btn.dataset.o)].apply(look);
+        stage.focus(g.focus);
+        changed();
+      };
+    });
+    content.querySelectorAll<HTMLElement>('.cz-colors').forEach((sec) => {
+      const g = current[Number(sec.dataset.g)] as ColorGroup;
+      sec.querySelectorAll<HTMLButtonElement>('.swatch').forEach((sw) => {
+        sw.onclick = () => {
+          g.set(look, sw.dataset.c!);
+          changed();
+        };
+      });
+      const picker = sec.querySelector<HTMLInputElement>('input[type=color]')!;
+      picker.oninput = () => {
+        g.set(look, picker.value);
+        changed();
+      };
+    });
+    loadThumbs();
+  };
+
+  const selectTab = (t: Tab) => {
+    tab = t;
+    root.querySelectorAll<HTMLElement>('.cz-tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+    stage.focus(TABS.find((x) => x.id === t)!.focus);
+    renderContent();
+  };
+
+  // --- Actions -------------------------------------------------------------------------------------------
   const close = (saved: boolean) => {
-    preview.dispose();
+    clearTimeout(thumbTimer);
+    stage.dispose();
+    thumbs.dispose();
     card?.classList.remove('wide');
     o.onClose(saved);
   };
 
-  // One delegated listener for every control (the markup is rebuilt only on reset).
-  const bind = () => {
-    root.querySelectorAll<HTMLElement>('.seg, .swatches').forEach((groupEl) => {
-      groupEl.onclick = (e) => {
-        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-v]');
-        if (!btn) return;
-        const v = btn.dataset.v!;
-        const g = groupEl.dataset.group!;
-        if (g === 'altura') look.altura = v as Appearance['altura'];
-        else if (g === 'biotipo') look.biotipo = v as Appearance['biotipo'];
-        else if (g === 'pele') look.pele = v;
-        else if (g === 'cabelo') look.cabelo.id = v;
-        else if (g === 'cabeloCor') look.cabelo.cor = v;
-        groupEl.querySelectorAll('button[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
-        const picker = groupEl.querySelector<HTMLInputElement>('input[type=color]');
-        if (picker) picker.value = v;
-        refresh();
-      };
-    });
-    root.querySelectorAll<HTMLInputElement>('.swatches input[type=color]').forEach((input) => {
-      input.oninput = () => {
-        if (input.dataset.group === 'pele') look.pele = input.value;
-        else look.cabelo.cor = input.value;
-        input.parentElement!.querySelectorAll('button[data-v]').forEach((b) => b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.v === input.value)));
-        refresh();
-      };
-    });
-    root.querySelectorAll<HTMLSelectElement>('select[data-slot]').forEach((sel) => {
-      sel.onchange = () => {
-        const slot = sel.dataset.slot as Slot;
-        look.roupas[slot].id = sel.value;
-        root.querySelector<HTMLInputElement>(`input[data-slot-color="${slot}"]`)!.disabled = !sel.value;
-        refresh();
-      };
-    });
-    root.querySelectorAll<HTMLInputElement>('input[data-slot-color]').forEach((input) => {
-      input.oninput = () => {
-        look.roupas[input.dataset.slotColor as Slot].cor = input.value;
-        refresh();
-      };
-    });
-    const pcd = root.querySelector<HTMLInputElement>('#cz-pcd')!;
-    const arm = root.querySelector<HTMLSelectElement>('#cz-arm')!;
-    const leg = root.querySelector<HTMLSelectElement>('#cz-leg')!;
-    pcd.onchange = () => {
-      root.querySelector('#cz-pcd-options')!.classList.toggle('hidden', !pcd.checked);
-      if (pcd.checked) {
-        // Turning PCD on starts with a choice made, so the preview shows something right away.
-        if (!look.pcd.braco && !look.pcd.perna) look.pcd.braco = 'maoEsq';
-      } else look.pcd = { braco: '', perna: '' };
-      arm.value = look.pcd.braco;
-      leg.value = look.pcd.perna;
-      refresh();
-    };
-    arm.onchange = () => {
-      look.pcd.braco = arm.value as Appearance['pcd']['braco'];
-      refresh();
-    };
-    leg.onchange = () => {
-      look.pcd.perna = leg.value as Appearance['pcd']['perna'];
-      refresh();
-    };
-    root.querySelector<HTMLButtonElement>('#cz-cancel')!.onclick = () => close(false);
-    root.querySelector<HTMLButtonElement>('#cz-reset')!.onclick = () => {
-      look = defaultAppearance(o.sex);
-      preview.dispose();
-      render();
-      preview = new Preview(root.querySelector<HTMLCanvasElement>('#cz-canvas')!);
-      refresh();
-      bind();
-    };
-    const save = root.querySelector<HTMLButtonElement>('#cz-save')!;
-    save.onclick = async () => {
-      save.disabled = true;
-      try {
-        await api('PATCH', '/api/perfil', { aparencia: look });
-        o.setStatus(l('saved'));
-        close(true);
-      } catch (err) {
-        o.setStatus(errorText(err), true);
-        save.disabled = false;
-      }
-    };
+  root.querySelectorAll<HTMLButtonElement>('.cz-tabs button').forEach((b) => (b.onclick = () => selectTab(b.dataset.tab as Tab)));
+  root.querySelector<HTMLButtonElement>('#cz-cancel')!.onclick = () => close(false);
+  root.querySelector<HTMLButtonElement>('#cz-reset')!.onclick = () => {
+    look = defaultAppearance(sex);
+    stage.show(look, sex);
+    effects.textContent = effectsText(look);
+    renderContent();
   };
-  bind();
+  const save = root.querySelector<HTMLButtonElement>('#cz-save')!;
+  save.onclick = async () => {
+    save.disabled = true;
+    try {
+      await api('PATCH', '/api/perfil', { aparencia: look });
+      o.setStatus(l('saved'));
+      close(true);
+    } catch (err) {
+      o.setStatus(errorText(err), true);
+      save.disabled = false;
+    }
+  };
+
+  stage.show(look, sex);
+  effects.textContent = effectsText(look);
+  selectTab('body');
 }

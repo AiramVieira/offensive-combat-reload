@@ -34,9 +34,12 @@ Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o 
 
 ### Personalizar o personagem
 
-No **Perfil → Personalizar personagem** há um editor com o boneco girando em 3D. Online, cada jogador aparece como se personalizou, e o corpo caído também.
+No **Perfil → Personalizar personagem** há um editor no estilo do "Criar um Sim": o boneco em 3D num palco (arraste para girar, role para aproximar), abas por categoria (Corpo, Rosto e cabelo, Camiseta, Parte de baixo, Sapatos, Acessórios, Modo PCD) e cada opção como uma miniatura renderizada do próprio personagem, nas cores atuais. A câmera aproxima da parte que está sendo editada. Online, cada jogador aparece como se personalizou, e o corpo caído também.
+
+Os personagens são **low poly estilizados**, feitos em código ([client/entities/avatar.ts](client/entities/avatar.ts)): cabeça grande com rosto de anime pintado numa textura (olhos na cor escolhida, sobrancelhas na cor do cabelo), cabelo em mechas facetadas, corpo com cintura e ombros, membros finos, punhos e calçados robustos. A cabeça visível é maior que a hitbox da cabeça (que não mudou).
 
 - **Corpo:** altura (Pequeno, Médio, Alto), biotipo (Magro, Médio, Gordo) e cor da pele (8 tons ou qualquer cor).
+- **Rosto:** cor dos olhos.
 - **Cabelo:** 3 estilos masculinos (curto, topete, black power) e 3 femininos (rabo de cavalo, longo solto, coque), em qualquer cor.
 - **Roupas** (3 de cada, para todos, cada peça com a cor que quiser): camiseta (básica, regata, polo); calça (jeans, cargo, moletom), bermuda (praia, jeans, esportiva) ou saia (lápis, rodada, de pregas); sapatos (tênis, bota, chinelo); chapéu (boné, palha, gorro); óculos (escuros, redondos, aviador); pulseira (couro, miçangas, relógio). Chapéu, óculos e pulseira são opcionais.
 - **Modo PCD:** personagem sem o braço esquerdo ou direito, sem a mão esquerda ou direita, e/ou sem a perna esquerda ou direita. Aparece na terceira pessoa e também nas mãos da primeira pessoa: sem um braço, o rifle fica numa mão só; sem a mão direita, a faca vai para a esquerda; sem a esquerda, a granada vai para a direita.

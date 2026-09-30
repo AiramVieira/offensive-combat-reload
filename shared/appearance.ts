@@ -44,6 +44,8 @@ export interface Appearance {
   altura: Height;
   biotipo: Build;
   pele: string;
+  /** Iris color. */
+  olhos: string;
   cabelo: Piece;
   roupas: Record<Slot, Piece>;
   pcd: { braco: ArmLoss; perna: LegLoss };
@@ -51,6 +53,7 @@ export interface Appearance {
 
 /** Skin tones offered first in the editor (any color can still be picked). */
 export const SKIN_TONES = ['#f6d7c3', '#eec4a4', '#dfa77f', '#c68a5c', '#a86b43', '#8a5232', '#6b3d24', '#4a2a19'];
+export const EYE_COLORS = ['#3b2418', '#6b4226', '#4a6fa5', '#3d7a4f', '#7a8a96', '#8a3a8a', '#b3312a', '#c9a227'];
 export const HAIR_COLORS = ['#1c1410', '#3b2418', '#6b4226', '#a8742f', '#e2c07a', '#b8b8b8', '#b3312a', '#3f6fd8'];
 
 const HEX = /^#[0-9a-f]{6}$/;
@@ -61,13 +64,14 @@ export function defaultAppearance(sex: Sex): Appearance {
     altura: 'medio',
     biotipo: 'medio',
     pele: '#eec4a4',
+    olhos: '#4a6fa5',
     cabelo: { id: f ? 'rabo' : 'curto', cor: '#3b2418' },
     roupas: {
       camiseta: { id: 'basica', cor: '#ff7a1a' },
       baixo: { id: 'calcaCargo', cor: '#4a5a32' },
       sapatos: { id: 'tenis', cor: '#222226' },
-      chapeu: { id: 'bone', cor: '#2f9bff' },
-      oculos: { id: 'escuros', cor: '#222226' },
+      chapeu: { id: '', cor: '#2f9bff' },
+      oculos: { id: '', cor: '#222226' },
       pulseira: { id: '', cor: '#6b4226' },
     },
     pcd: { braco: '', perna: '' },
@@ -93,6 +97,7 @@ export function sanitizeAppearance(raw: unknown, sex: Sex): Appearance {
     altura: pick(o.altura, HEIGHTS, d.altura),
     biotipo: pick(o.biotipo, BUILDS, d.biotipo),
     pele: color(o.pele, d.pele),
+    olhos: color(o.olhos, d.olhos),
     // Hair styles belong to a body: switching body type falls back to that body's first style.
     cabelo: piece(o.cabelo, HAIR[sex], d.cabelo),
     roupas,
@@ -167,6 +172,7 @@ export function randomAppearance(sex: Sex, rnd: () => number = Math.random): App
     altura: one(HEIGHTS),
     biotipo: one(BUILDS),
     pele: one(SKIN_TONES),
+    olhos: one(EYE_COLORS),
     cabelo: { id: one(HAIR[sex]), cor: one(HAIR_COLORS) },
     roupas,
     pcd: { braco: rnd() < 0.12 ? one(ARM_LOSSES.slice(1)) : '', perna: rnd() < 0.08 ? one(LEG_LOSSES.slice(1)) : '' },
