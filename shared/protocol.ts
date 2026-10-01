@@ -4,6 +4,7 @@
 import type { HitRegion } from './weapons';
 import { HUMILIATION } from './constants';
 import type { Loadout, ProgWeapon } from './progression';
+import type { MapId } from './maps';
 
 export const NET = {
   /** Server simulation/broadcast rate. */
@@ -51,6 +52,7 @@ export interface NetState {
 export interface SessionInfo {
   id: string;
   name: string;
+  map: MapId;
   players: number;
   max: number;
   permanent: boolean;
@@ -100,7 +102,8 @@ export type ClientMsg =
   /** Identity comes from the ticket the connection was opened with; name and body come from the account. */
   | { t: 'hello' }
   | { t: 'list' }
-  | { t: 'create'; name: string }
+  /** An unknown map falls back to the default one. */
+  | { t: 'create'; name: string; map?: MapId }
   | { t: 'join'; session: string }
   | { t: 'leave' }
   | { t: 'state'; s: NetState }

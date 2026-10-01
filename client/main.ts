@@ -18,6 +18,7 @@ import { Viewmodel } from './render/viewmodel';
 import { QualityManager } from './render/quality';
 import { createPhysics } from './world/physics';
 import { buildBlockoutMap, type SpawnPoint } from './world/blockoutMap';
+import { buildDragonGardenMap } from './world/dragonGarden';
 import { loadTextureOverrides } from './world/surfaces';
 import { buildGltfMap } from './world/gltfMap';
 import { MapBuilder } from './world/mapBuilder';
@@ -77,13 +78,7 @@ async function boot() {
   const ctx = createRenderContext(document.getElementById('game')!);
   const quality = new QualityManager(ctx);
   const sfx = new Sfx();
-  const tMap = performance.now();
-  // ?mapa=/maps/arquivo.glb loads a map made in Blender; default is the code-built "Rua dos Vizinhos".
-  const mapUrl = new URLSearchParams(location.search).get('mapa');
-  const buildMap = mapUrl ? buildGltfMap(mapUrl, new MapBuilder(physics, ctx.scene), ctx.renderer) : buildBlockoutMap(physics, ctx.scene, ctx.renderer, sfx);
-  const [map] = await Promise.all([buildMap, loadTextureOverrides(ctx.renderer)]);
-  const mapBuildMs = performance.now() - tMap;
-  mark('map');
+  const textures = loadTextureOverrides(ctx.renderer);
   screens.setProgress(1);
   const settings = loadSettings();
   quality.set(settings.quality);
@@ -96,6 +91,23 @@ async function boot() {
   const conn = online?.conn ?? null;
   const me = online?.joined.you ?? 0;
   if (online) conn!.seed(online.joined.time);
+
+  // --- Map: the session's (online) or the one picked on the home screen ------------------------------
+  screens.showLoading();
+  screens.setProgress(0.3);
+  const tMap = performance.now();
+  // ?mapa=/maps/arquivo.glb loads a map made in Blender over whatever was picked (map makers' preview).
+  const mapUrl = new URLSearchParams(location.search).get('mapa');
+  const buildMap = mapUrl
+    ? buildGltfMap(mapUrl, new MapBuilder(physics, ctx.scene), ctx.renderer)
+    : choice.map === 'jardim'
+      ? buildDragonGardenMap(physics, ctx.scene, sfx)
+      : buildBlockoutMap(physics, ctx.scene, ctx.renderer, sfx);
+  const [map] = await Promise.all([buildMap, textures]);
+  const mapBuildMs = performance.now() - tMap;
+  mark('map');
+  screens.setProgress(1);
+  screens.hideLoading();
 
   const botMode = choice.mode === 'bots' ? choice : null;
   const registry: HitboxRegistry = new Map();
@@ -1281,6 +1293,8 @@ async function boot() {
   render(1, 0);
   mark('firstFrame');
   screens.showMenu('start');
+  // Every handler exists now: messages that arrived while the map was being built go through.
+  conn?.release();
   startLoop(step, render);
 }
 

@@ -21,6 +21,8 @@ export class WaterDrops {
   private pos = new Float32Array(MAX_DROPS * 3);
   private vel = new Float32Array(MAX_DROPS * 3);
   private life = new Float32Array(MAX_DROPS);
+  /** Height each droplet vanishes at (the ground, or a fountain's water surface). */
+  private floor = new Float32Array(MAX_DROPS);
   private cursor = 0;
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
@@ -39,14 +41,20 @@ export class WaterDrops {
     scene.add(this.mesh);
   }
 
-  spawn(at: THREE.Vector3, up: number, spread: number) {
-    const i = this.cursor;
-    this.cursor = (this.cursor + 1) % MAX_DROPS;
+  spawn(at: THREE.Vector3, up: number, spread: number, floor = 0.1) {
     const a = Math.random() * Math.PI * 2;
     const r = Math.random() * spread;
+    this.emit(at, Math.cos(a) * r, up * (0.8 + Math.random() * 0.35), Math.sin(a) * r, floor);
+  }
+
+  /** One droplet with an exact starting velocity (fountain spouts). */
+  emit(at: THREE.Vector3, vx: number, vy: number, vz: number, floor = 0.1) {
+    const i = this.cursor;
+    this.cursor = (this.cursor + 1) % MAX_DROPS;
     this.pos.set([at.x, at.y, at.z], i * 3);
-    this.vel.set([Math.cos(a) * r, up * (0.8 + Math.random() * 0.35), Math.sin(a) * r], i * 3);
+    this.vel.set([vx, vy, vz], i * 3);
     this.life[i] = 1.6;
+    this.floor[i] = floor;
   }
 
   update(dt: number) {
@@ -61,7 +69,7 @@ export class WaterDrops {
       this.pos[k + 1] += this.vel[k + 1] * dt;
       this.pos[k + 2] += this.vel[k + 2] * dt;
       // Droplets vanish on the ground (splash) or when they run out of life.
-      if (this.pos[k + 1] < 0.1 || this.life[i] <= 0) {
+      if (this.pos[k + 1] < this.floor[i] || this.life[i] <= 0) {
         this.life[i] = 0;
         this.m.makeScale(0, 0, 0);
       } else {

@@ -109,6 +109,10 @@ export class MapBuilder {
     );
   }
 
+  ballCollider(center: THREE.Vector3, radius: number, physics: SurfaceMaterial, onShot?: SurfaceInfo['onShot']) {
+    return this.register(RAPIER.ColliderDesc.ball(radius).setTranslation(center.x, center.y, center.z), physics, onShot);
+  }
+
   convexCollider(points: Float32Array, physics: SurfaceMaterial, onShot?: SurfaceInfo['onShot']) {
     const desc = RAPIER.ColliderDesc.convexHull(points);
     return desc ? this.register(desc, physics, onShot) : null;

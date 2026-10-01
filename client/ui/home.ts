@@ -2,6 +2,7 @@
 // body is chosen), then an online session (account required), bots or offline training. Resolves with the chosen mode.
 import type { MeResponse, ProfileResponse } from '@shared/account';
 import { CLOSE, NET, type ServerMsg, type SessionInfo, type Sex } from '@shared/protocol';
+import { DEFAULT_MAP, isMapId, MAP_IDS, MAPS, type MapId } from '@shared/maps';
 import { api, fetchMe, fetchProfile } from '../net/api';
 import { Connection } from '../net/connection';
 import { errorText, showAuth, type AuthView } from './auth';
@@ -10,7 +11,7 @@ import { t } from './strings';
 
 export type BotSkillName = 'facil' | 'normal' | 'dificil';
 
-export type HomeChoice = { name: string; sex: Sex; account: ProfileResponse | null } & (
+export type HomeChoice = { name: string; sex: Sex; account: ProfileResponse | null; map: MapId } & (
   | { mode: 'offline'; variant: 'range' }
   | { mode: 'bots'; count: number; skill: BotSkillName }
   | { mode: 'online'; conn: Connection; joined: Extract<ServerMsg, { t: 'joined' }> }
@@ -52,11 +53,16 @@ export function showHome(): Promise<HomeChoice> {
   $('home-bots').textContent = t('playBots');
   $('bot-skill-label').textContent = t('botSkill');
   $('bot-count-label').textContent = t('botCount');
+  $('home-map-label').textContent = t('mapLabel');
   const skillSel = $<HTMLSelectElement>('bot-skill');
   const countSel = $<HTMLSelectElement>('bot-count');
+  const mapSel = $<HTMLSelectElement>('home-map');
+  const newMapSel = $<HTMLSelectElement>('session-new-map');
   skillSel.innerHTML = ([['facil', 'skillEasy'], ['normal', 'skillNormal'], ['dificil', 'skillHard']] as const).map(([v, k]) => `<option value="${v}">${t(k)}</option>`).join('');
   countSel.innerHTML = [3, 5, 7, 9].map((n) => `<option value="${n}">${n}</option>`).join('');
-  let prefs = { skill: 'normal', count: 7 };
+  mapSel.innerHTML = newMapSel.innerHTML = MAP_IDS.map((id) => `<option value="${id}">${MAPS[id].nome}</option>`).join('');
+  newMapSel.title = t('mapLabel');
+  let prefs: { skill: string; count: number; map?: string } = { skill: 'normal', count: 7 };
   try {
     prefs = { ...prefs, ...JSON.parse(localStorage.getItem(BOTS_KEY) ?? '{}') };
   } catch {
@@ -64,6 +70,15 @@ export function showHome(): Promise<HomeChoice> {
   }
   skillSel.value = prefs.skill;
   countSel.value = String(prefs.count);
+  mapSel.value = newMapSel.value = isMapId(prefs.map) ? prefs.map : DEFAULT_MAP;
+  const pickedMap = () => (isMapId(mapSel.value) ? mapSel.value : DEFAULT_MAP);
+  const savePrefs = () => {
+    try {
+      localStorage.setItem(BOTS_KEY, JSON.stringify({ skill: skillSel.value, count: Number(countSel.value), map: pickedMap() }));
+    } catch {
+      /* storage unavailable */
+    }
+  };
   $('home-lobby-title').textContent = t('sessions');
   $('session-create').textContent = t('createSession');
   $('home-back').textContent = t('back');
@@ -169,14 +184,16 @@ export function showHome(): Promise<HomeChoice> {
       for (const s of sessions) {
         const li = document.createElement('li');
         const full = s.players >= s.max;
-        li.innerHTML = `<span class="s-name"></span><span class="s-count">${s.players}/${s.max}</span><button class="small-btn" ${full ? 'disabled' : ''}>${full ? t('full') : t('join')}</button>`;
-        li.querySelector('.s-name')!.textContent = s.name;
+        li.innerHTML = `<span class="s-name"><b></b><small></small></span><span class="s-count">${s.players}/${s.max}</span><button class="small-btn" ${full ? 'disabled' : ''}>${full ? t('full') : t('join')}</button>`;
+        li.querySelector('.s-name b')!.textContent = s.name;
+        // Fixed sessions are named after their map: no need to say it twice.
+        li.querySelector('.s-name small')!.textContent = s.name === MAPS[s.map]?.nome ? '' : (MAPS[s.map]?.nome ?? '');
         li.querySelector('button')!.addEventListener('click', () => join({ t: 'join', session: s.id }));
         list.appendChild(li);
       }
     };
 
-    const join = async (msg: { t: 'join'; session: string } | { t: 'create'; name: string }) => {
+    const join = async (msg: { t: 'join'; session: string } | { t: 'create'; name: string; map: MapId }) => {
       if (!conn || busy) return;
       busy = true;
       setStatus(t('joining'));
@@ -184,9 +201,12 @@ export function showHome(): Promise<HomeChoice> {
         const joinedP = conn.next('joined');
         conn.send(msg);
         const joined = await joinedP;
+        // The game releases these once its handlers exist (after the map is built).
+        conn.hold();
         const acct = await account();
         home.classList.add('hidden');
-        resolve({ mode: 'online', name: playerName(), sex, account: acct, conn, joined });
+        const map = isMapId(joined.session.map) ? joined.session.map : DEFAULT_MAP;
+        resolve({ mode: 'online', name: playerName(), sex, account: acct, map, conn, joined });
       } catch (err) {
         setStatus(err instanceof Error ? err.message : String(err), true);
       } finally {
@@ -223,26 +243,28 @@ export function showHome(): Promise<HomeChoice> {
     };
 
     $('home-offline').onclick = async () => {
+      savePrefs();
       const acct = await account();
       home.classList.add('hidden');
-      resolve({ mode: 'offline', name: playerName(), sex, account: acct, variant: 'range' });
+      resolve({ mode: 'offline', name: playerName(), sex, account: acct, map: pickedMap(), variant: 'range' });
     };
     $('home-bots').onclick = async () => {
       const skill = skillSel.value as BotSkillName;
       const count = Number(countSel.value);
-      try {
-        localStorage.setItem(BOTS_KEY, JSON.stringify({ skill, count }));
-      } catch {
-        /* storage unavailable */
-      }
+      savePrefs();
       const acct = await account();
       home.classList.add('hidden');
-      resolve({ mode: 'bots', name: playerName(), sex, account: acct, count, skill });
+      resolve({ mode: 'bots', name: playerName(), sex, account: acct, map: pickedMap(), count, skill });
+    };
+    mapSel.onchange = () => {
+      newMapSel.value = mapSel.value;
+      savePrefs();
     };
 
-    $('session-create').onclick = () => join({ t: 'create', name: createInput.value });
+    const create = () => join({ t: 'create', name: createInput.value, map: isMapId(newMapSel.value) ? newMapSel.value : DEFAULT_MAP });
+    $('session-create').onclick = create;
     createInput.onkeydown = (e) => {
-      if (e.key === 'Enter') join({ t: 'create', name: createInput.value });
+      if (e.key === 'Enter') create();
     };
     $('home-back').onclick = () => {
       if (conn) conn.onClose = () => {};

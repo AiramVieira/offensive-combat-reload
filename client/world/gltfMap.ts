@@ -45,7 +45,7 @@ export function gltfLoader(renderer: THREE.WebGLRenderer): GLTFLoader {
   return loader;
 }
 
-const PHYSICS = new Set<SurfaceMaterial>(['grass', 'concrete', 'wood', 'metal', 'glass', 'tile']);
+const PHYSICS = new Set<SurfaceMaterial>(['grass', 'concrete', 'wood', 'metal', 'glass', 'tile', 'paper']);
 const converted = new Map<THREE.Material, THREE.Material>();
 
 /** "MAT_tijolo.001" → "tijolo" (Blender appends .001 to duplicated material names). */

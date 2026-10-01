@@ -1,7 +1,42 @@
 // Decorative props with recognisable silhouettes: the giant ice cream on the truck's roof and the lawn
 // flamingos. Visual only; the map code gives them simple colliders.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mergeColoredParts, toonGradient, type ColoredPart } from '../render/materials';
+
+/** Clouds drifting across the sky: one instanced mesh. Returns the per-frame update. */
+export function skyClouds(scene: THREE.Scene): (dt: number) => void {
+  const cloudParts = [
+    [0, 0, 0, 5],
+    [4.5, -0.8, 1, 3.8],
+    [-4.2, -1, -0.5, 3.6],
+    [1.5, 1.8, -0.8, 3.2],
+  ].map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z));
+  const cloudGeo = mergeGeometries(cloudParts, false)!;
+  cloudGeo.computeVertexNormals();
+  const clouds = new THREE.InstancedMesh(cloudGeo, new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0x9fb8cc, gradientMap: toonGradient() }), 10);
+  clouds.frustumCulled = false;
+  const cloudPos: THREE.Vector3[] = [];
+  const cm = new THREE.Matrix4();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + Math.random() * 0.4;
+    const r = 70 + Math.random() * 70;
+    cloudPos.push(new THREE.Vector3(Math.cos(a) * r, 48 + Math.random() * 22, Math.sin(a) * r));
+  }
+  const cloudScale = cloudPos.map(() => 0.8 + Math.random() * 0.9);
+  scene.add(clouds);
+  return (dt) => {
+    for (let i = 0; i < cloudPos.length; i++) {
+      const c = cloudPos[i];
+      c.x += dt * 1.8;
+      if (c.x > 170) c.x = -170;
+      const s = cloudScale[i];
+      cm.compose(c, new THREE.Quaternion(), new THREE.Vector3(s * 1.4, s * 0.6, s));
+      clouds.setMatrixAt(i, cm);
+    }
+    clouds.instanceMatrix.needsUpdate = true;
+  };
+}
 
 /** Waffle pattern for the cone: diagonal grid of grooves on golden batter. */
 function waffleTexture(): THREE.CanvasTexture {

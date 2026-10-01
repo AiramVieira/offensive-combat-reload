@@ -1,5 +1,5 @@
 // Hitscan resolution against the Rapier world (map colliders + dummy hitboxes), with bullet penetration
-// through thin wood and glass (weapon data "penetracao").
+// through thin wood, glass and paper (weapon data "penetracao").
 // The same query will run authoritatively on the server with rewound hitboxes (section 14).
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';

@@ -12,7 +12,7 @@ import { Hydrant, WaterDrops, type HydrantSfx } from './hydrant';
 import { PropBus } from './props';
 import { surfaceMaterial } from './surfaces';
 import { buildCar, buildIceCreamTruck, buildVan } from './vehicles';
-import { flamingoGeometry, iceCreamTopper } from './decor';
+import { flamingoGeometry, iceCreamTopper, skyClouds } from './decor';
 import { ChowChow, namePlate } from './dog';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -316,37 +316,11 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
   sign(['CUIDADO', 'Cão bravo', '(e muito fofo)'], 33.4, 16.6, 0, '#ffd23f', '#1b1530', 2.1);
   sign(['RUA DOS', 'VIZINHOS', 'Proibido estacionar tanque'], -38.6, -9.3, -Math.PI / 2, '#2f7d3a', '#ffffff', 2.4);
 
-  // Clouds drifting across the sky: one instanced mesh.
-  const cloudParts = [
-    [0, 0, 0, 5],
-    [4.5, -0.8, 1, 3.8],
-    [-4.2, -1, -0.5, 3.6],
-    [1.5, 1.8, -0.8, 3.2],
-  ].map(([x, y, z, r]) => new THREE.IcosahedronGeometry(r, 1).translate(x, y, z));
-  const cloudGeo = mergeGeometries(cloudParts, false)!;
-  cloudGeo.computeVertexNormals();
-  const clouds = new THREE.InstancedMesh(cloudGeo, new THREE.MeshToonMaterial({ color: 0xffffff, emissive: 0x9fb8cc, gradientMap: toonGradient() }), 10);
-  clouds.frustumCulled = false;
-  const cloudPos: THREE.Vector3[] = [];
-  const cm = new THREE.Matrix4();
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 + Math.random() * 0.4;
-    const r = 70 + Math.random() * 70;
-    cloudPos.push(new THREE.Vector3(Math.cos(a) * r, 48 + Math.random() * 22, Math.sin(a) * r));
-  }
-  const cloudScale = cloudPos.map(() => 0.8 + Math.random() * 0.9);
-  scene.add(clouds);
+  // Clouds drifting across the sky, and a bird now and then.
+  const clouds = skyClouds(scene);
   let birdTimer = 4;
   animated.push((dt) => {
-    for (let i = 0; i < cloudPos.length; i++) {
-      const c = cloudPos[i];
-      c.x += dt * 1.8;
-      if (c.x > 170) c.x = -170;
-      const s = cloudScale[i];
-      cm.compose(c, new THREE.Quaternion(), new THREE.Vector3(s * 1.4, s * 0.6, s));
-      clouds.setMatrixAt(i, cm);
-    }
-    clouds.instanceMatrix.needsUpdate = true;
+    clouds(dt);
     birdTimer -= dt;
     if (birdTimer <= 0) {
       birdTimer = 6 + Math.random() * 9;

@@ -7,6 +7,8 @@ type Handler<T extends ServerMsg['t']> = (msg: Extract<ServerMsg, { t: T }>) => 
 
 export class Connection {
   private handlers = new Map<string, ((msg: ServerMsg) => void)[]>();
+  /** Messages queued by hold(), dispatched by release(). */
+  private held: ServerMsg[] | null = null;
   /** Estimated serverTime - performance.now(), smoothed. */
   private offset = 0;
   private synced = false;
@@ -24,7 +26,8 @@ export class Connection {
         return;
       }
       if (msg.t === 'pong') this.onPong(msg.c, msg.s);
-      for (const h of this.handlers.get(msg.t) ?? []) h(msg);
+      if (this.held) this.held.push(msg);
+      else this.dispatch(msg);
     });
     ws.addEventListener('close', (ev) => {
       clearInterval(this.pingTimer);
@@ -64,6 +67,26 @@ export class Connection {
     const list = this.handlers.get(type) ?? [];
     list.push(fn as (msg: ServerMsg) => void);
     this.handlers.set(type, list);
+  }
+
+  private dispatch(msg: ServerMsg) {
+    for (const h of this.handlers.get(msg.t) ?? []) h(msg);
+  }
+
+  /**
+   * Queues incoming messages instead of dispatching them (the clock keeps syncing). The game holds them
+   * from 'joined' until its handlers exist: building the map in between would otherwise lose kills, joins
+   * and corpses sent meanwhile.
+   */
+  hold() {
+    this.held ??= [];
+  }
+
+  /** Dispatches everything queued by hold(), in order, and goes back to live dispatch. */
+  release() {
+    const queued = this.held ?? [];
+    this.held = null;
+    for (const msg of queued) this.dispatch(msg);
   }
 
   /** Resolves with the next message of `type` (used by the home screen's request/response steps). */
