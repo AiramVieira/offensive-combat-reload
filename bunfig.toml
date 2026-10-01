@@ -1,0 +1,13 @@
+# Bun settings: https://bun.com/docs/runtime/bunfig
+
+[run]
+# Package binaries (vite, tsc) start on Bun, not on the Node their "#!/usr/bin/env node" line asks for.
+bun = true
+
+[test]
+# Server tests (bun test). They need the database and Redis from docker compose (docker compose up -d
+# banco redis) and use their own database (oc_teste) and Redis db 1, recreated by the preload on every run.
+# Files run one after another in a single process, each with its own game server on a free port.
+root = "./server/tests"
+preload = ["./server/tests/preload.ts"]
+timeout = 20000

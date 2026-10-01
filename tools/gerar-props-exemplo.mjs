@@ -4,7 +4,7 @@
 //   public/maps/arena_teste.glb         full map: ground, walls, ramp, crates, SPAWN_/DUMMY_/KILLVOLUME
 //                                       (open with ?mapa=/maps/arena_teste.glb)
 //
-//   node tools/gerar-props-exemplo.mjs
+//   bun run exemplos:glb
 import { Document, NodeIO } from '@gltf-transform/core';
 import { writeFile, mkdir } from 'node:fs/promises';
 

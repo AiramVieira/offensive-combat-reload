@@ -1,8 +1,8 @@
 // Offensive Combat game server: accounts API + lobby + free-for-all sessions over WebSocket (section 14).
 //
 //   docker compose up -d banco redis   PostgreSQL and Redis (needed for accounts)
-//   npm run server         API and WebSocket on :8787 (Vite's dev server proxies /api and /ws to it)
-//   npm run build && npm start   one port for everything: serves dist/, the API and the WebSocket
+//   bun run server         API and WebSocket on :8787 (Vite's dev server proxies /api and /ws to it)
+//   bun run build && bun start   one port for everything: serves dist/, the API and the WebSocket
 //   HOST=127.0.0.1 PORT=8787     behind nginx (deploy/): only nginx is reachable from outside
 import { NET } from '@shared/protocol';
 import { startServer } from './app';

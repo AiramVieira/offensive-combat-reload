@@ -1,8 +1,9 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "types": ["node"],
-    "lib": ["ES2022"],
+    "target": "ESNext",
+    "types": ["bun"],
+    "lib": ["ESNext"],
     "paths": { "@shared/*": ["../shared/*"] }
   },
   "include": ["./**/*.ts", "../shared/**/*.ts", "../tools/**/*.ts"]

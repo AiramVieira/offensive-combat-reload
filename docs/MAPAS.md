@@ -163,7 +163,7 @@ Veja o exemplo em [blockoutMap.ts](../client/world/blockoutMap.ts), procurando `
 
 ### Exemplos prontos
 
-`npm run exemplos:glb` regenera, a partir de [tools/gerar-props-exemplo.mjs](../tools/gerar-props-exemplo.mjs):
+`bun run exemplos:glb` regenera, a partir de [tools/gerar-props-exemplo.mjs](../tools/gerar-props-exemplo.mjs):
 - `public/models/casinha_cachorro.glb`: prop com `MAT_madeira`, `MAT_telhado`, `COL_casinha_BOX` e `GAG_LATIDO` (o cachorro late quando alguém passa).
 - `public/maps/arena_teste.glb`: mapa inteiro com chão, muros, plataforma com rampas, caixotes, spawns, bonecos (um patrulhando) e `KILLVOLUME`.
 
@@ -202,7 +202,7 @@ Aperte **F3** no jogo para ver FPS, draw calls, triângulos, tempo de CPU e a GP
 5. **Otimize o .glb antes de colocar no jogo:**
 
 ```bash
-npx @gltf-transform/cli optimize entrada.glb public/maps/saida.glb --compress meshopt --texture-compress ktx2
+bunx @gltf-transform/cli optimize entrada.glb public/maps/saida.glb --compress meshopt --texture-compress ktx2
 ```
 
    Isso funde vértices repetidos, comprime a malha (Meshopt, que o jogo já decodifica) e converte texturas embutidas para KTX2 (esta parte precisa do `toktx` instalado; sem ele, use `--texture-compress webp`).
