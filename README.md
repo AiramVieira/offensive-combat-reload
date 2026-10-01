@@ -17,9 +17,11 @@ Para **publicar e jogar com amigos** (Radmin VPN, túnel, roteador ou servidor a
 ## Jogar online
 
 Ao abrir o jogo, a **home** mostra a sua **conta** e três opções. O **sexo do personagem** é escolhido no **Perfil** (masculino ou feminino: a personagem tem cabelo com rabo de cavalo e silhueta própria; todos veem a escolha, online e nos corpos); sem conta, o personagem é o masculino.
-- **Jogar online** (exige conta): lista as sessões abertas ("Rua dos Vizinhos" sempre existe), com quantos jogadores há em cada uma, e permite **criar** uma sessão com nome. Cada sessão é um **mata-mata livre** de até 10 jogadores: todos contra todos.
+- **Jogar online** (exige conta): lista as sessões abertas, com o mapa e quantos jogadores há em cada uma, e permite **criar** uma sessão com nome e mapa. Cada mapa tem uma sessão fixa que sempre existe ("Rua dos Vizinhos" e "Jardim do Dragão"). Cada sessão é um **mata-mata livre** de até 10 jogadores: todos contra todos.
 - **Contra bots:** mata-mata livre offline contra 3 a 9 bots (fácil, normal ou difícil). Veja [Bots](#bots).
 - **Treino offline:** o campo com os bonecos, sem servidor.
+
+O seletor **Mapa** da home vale para os bots e o treino; online, o mapa é o da sessão. O mapa só é montado depois da escolha.
 
 ### Contas
 
@@ -38,7 +40,7 @@ Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o 
 
 ### Nascimento (seção 6)
 
-No mata-mata livre (online e contra bots) há **21 pontos de nascimento neutros** espalhados pelo mapa: térreo e andar de cima das casas, vãos entre as casas, fundos, quintais, pontas da rua, casa na árvore e torre. O jogo nunca escolhe um ponto a menos de 2 m de alguém. Também evita pontos com inimigo a menos de 15 m ou com visão direta do lugar, e sorteia entre os três melhores. Contra bots, quem nasce fica **2 s protegido** (pisca e não recebe dano). A proteção acaba antes se a pessoa atirar.
+No mata-mata livre (online e contra bots) há **pontos de nascimento neutros** espalhados pelo mapa: 21 na Rua dos Vizinhos (térreo e andar de cima das casas, vãos entre as casas, fundos, quintais, pontas da rua, casa na árvore e torre) e 24 no Jardim do Dragão (salas e varandas dos pavilhões, os três andares do pagode, corredor, ilha, colina e pátios). O jogo nunca escolhe um ponto a menos de 2 m de alguém. Também evita pontos com inimigo a menos de 15 m ou com visão direta do lugar, e sorteia entre os três melhores. Contra bots, quem nasce fica **2 s protegido** (pisca e não recebe dano). A proteção acaba antes se a pessoa atirar.
 
 ### O que é do servidor e o que é do cliente
 
@@ -71,6 +73,7 @@ No modo **Contra bots**, cada bot é um jogador completo: usa o mesmo movimento,
 ## O que existe na Fase 1
 
 - **Mapa "Rua dos Vizinhos"** (80 × 60 m): três faixas, casas de dois andares atravessáveis com telhado de duas águas, rua com carros modelados (silhueta com caixas de roda, cabine com colunas e vidros, rodas com aro, para-choques, faróis e lanternas, placas Mercosul, retrovisores, pintura com reflexo), van de mudança e caminhão de sorvete com janela de atendimento, quintais com cercas, piscina vazia, casa na árvore, torre de 7 m e uma casinha de cachorro carregada de um .glb, guardada pela **Amora**, uma Chow Chow preta: ela acompanha com a cabeça quem se aproxima, e quem passa na frente da porta é **mordido e morre na hora** (offline, contra bots e online; os bots contornam a área). Escadas são sólidas por baixo (não dá para entrar no vão).
+- **Mapa "Jardim do Dragão"** (80 × 60 m): jardim chinês com uma **casa de chá** de dois andares (paredes de papel, varanda em três lados e um **gongo** que toca quando leva tiro), um **pagode** de três andares com varanda em cada andar, mais dois pavilhões de dois andares com varanda, um **lago com carpas** e uma **fonte do dragão** na ilha (o dragão cospe **fogo** quando leva tiro), pontes em zigue-zague, ponte de pedra em arco, pedras de pisar, portão **paifang** no pátio oeste, **portão lua** no pátio leste, colina de pedras com um pavilhão no topo, corredor coberto com biombos de papel, fonte de três andares, bambus, pinheiros, cerejeiras, bonsais e lanternas de papel que **balançam com os tiros**. As **paredes de papel** são atravessadas pelas balas (perdem só 5% do dano).
 - **Texturas e mapas do Blender:** biblioteca de superfícies (tijolo, madeira, telhado, reboco…) com texturas repetidas em metros e trocáveis por arquivo, e carregador glTF com as convenções `COL_`, `SPAWN_`, `MAT_`, `DUMMY_`. Veja **[docs/MAPAS.md](docs/MAPAS.md)**. Mapa de teste em `?mapa=/maps/arena_teste.glb`.
 - **Controlador em primeira pessoa** (Rapier, passo fixo de 60 Hz, render interpolado): andar, correr, agachar, pular, degraus automáticos, dano de queda acima de 6 m, regeneração de vida. Valores da seção 4 do documento de design.
 - **Rifle Padrão hitscan** 100% guiado por dados ([shared/data/weapons/rifle_padrao.json](shared/data/weapons/rifle_padrao.json)): cadência, pente/reserva, recarga tática/vazia, dispersão em 4 estados com acúmulo, padrão de recuo, mira (ADS) com zoom, atraso de saída do sprint, queda de dano por distância, multiplicador por região e **penetração**. O tiro atravessa superfícies finas de madeira (cercas, paredes da casa na árvore, guarda-corpos, escadas e pisos de madeira) com 60% do dano, e de vidro com 90%. O limite é de até 2 superfícies, e cada uma pode ter no máximo 40 cm de espessura no caminho da bala: um caixote, ou uma tábua atingida muito de lado, segura o tiro. Tiro na virilha mata mesmo através da madeira. Paredes de tijolo, reboco e concreto, e os carros, seguram o tiro.

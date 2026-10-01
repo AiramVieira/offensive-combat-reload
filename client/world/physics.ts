@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GROUP, groups } from '@shared/constants';
 
-export type SurfaceMaterial = 'grass' | 'concrete' | 'wood' | 'metal' | 'glass' | 'tile';
+export type SurfaceMaterial = 'grass' | 'concrete' | 'wood' | 'metal' | 'glass' | 'tile' | 'paper';
 
 export interface SurfaceInfo {
   material: SurfaceMaterial;

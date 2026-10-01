@@ -9,7 +9,7 @@ import { PAINTERS, paintTexture } from './textures';
 import type { SurfaceMaterial } from './physics';
 
 export interface SurfaceDef {
-  /** Physics/sound material (footsteps, impacts, future bullet penetration). */
+  /** Physics/sound material (footsteps, impacts, bullet penetration). */
   physics: SurfaceMaterial;
   /** Meters covered by one repeat of the texture. */
   metros: number;
@@ -30,6 +30,10 @@ export const SURFACES = {
   azulejo: { physics: 'tile', metros: 1, painter: 'azulejo' },
   metal: { physics: 'metal', metros: 2, painter: 'metal' },
   vidro: { physics: 'glass', metros: 2, painter: 'vidro' },
+  /** Shoji: rice paper on a wooden lattice. Thin panels are shot through (physics "paper"). */
+  papel: { physics: 'paper', metros: 1.8, painter: 'papel' },
+  /** Garden flagstones, irregular courses (paths and terraces). */
+  pedra: { physics: 'concrete', metros: 2.4, painter: 'pedra' },
   /** Car paint: vehicles UV it in their own meters (v = height), see world/vehicles.ts. */
   lataria: { physics: 'metal', metros: 2, painter: 'lataria' },
   /** Flat paint: team colors, stripes, small props. */

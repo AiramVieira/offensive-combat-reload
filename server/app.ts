@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { CLOSE, NET, sanitizeName, type ClientMsg, type ServerMsg } from '@shared/protocol';
+import { DEFAULT_MAP, isMapId, MAPS, type MapId } from '@shared/maps';
 import { activeBan, emptyDelta, flushProgress, getAccount, loadGameProfile, openParticipation } from './accounts';
 import { handleApi, ticketKey } from './api';
 import type { Deps } from './auth/sessions';
@@ -91,16 +92,18 @@ export async function startServer(opts: Options): Promise<GameServer> {
     }, 100);
   }
 
-  function createSession(name: string, permanent = false): Session {
+  function createSession(name: string, map: MapId, permanentId?: string): Session {
     let id: string;
     do id = Math.random().toString(36).slice(2, 8);
     while (sessions.has(id));
-    const s = new Session(permanent ? 'principal' : id, name, permanent, now, sessionsChanged);
+    const s = new Session(permanentId ?? id, name, map, permanentId !== undefined, now, sessionsChanged);
     sessions.set(s.id, s);
     return s;
   }
 
-  createSession('Rua dos Vizinhos', true);
+  // One permanent session per map; "principal" keeps its id from when there was only the street.
+  createSession(MAPS.rua.nome, 'rua', 'principal');
+  createSession(MAPS.jardim.nome, 'jardim', 'jardim');
 
   // --- Progress persistence ---------------------------------------------------------------------------
   async function flush(a: LiveAccount, close: boolean) {
@@ -238,7 +241,7 @@ export async function startServer(opts: Options): Promise<GameServer> {
           let s: Session | undefined;
           if (msg.t === 'create') {
             const name = sanitizeName(msg.name, NET.sessionNameMax) || `Sala de ${profile.tag.split('#')[0]}`;
-            s = createSession(name);
+            s = createSession(name, isMapId(msg.map) ? msg.map : DEFAULT_MAP);
           } else {
             s = sessions.get(String(msg.session));
             if (!s) return conn.send({ t: 'error', message: 'Essa sessão não existe mais.' });

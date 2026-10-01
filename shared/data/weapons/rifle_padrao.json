@@ -55,6 +55,10 @@
       "glass": {
         "dano": 0.9,
         "espessuraMax": 0.1
+      },
+      "paper": {
+        "dano": 0.95,
+        "espessuraMax": 0.1
       }
     }
   },
