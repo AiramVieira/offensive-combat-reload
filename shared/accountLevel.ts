@@ -5,7 +5,7 @@ import data from './data/nivel_conta.json';
 export const ACCOUNT_XP = {
   perMinuteAlive: data.porMinutoVivo,
   perKill: data.porAbate,
-  perHumiliation: data.porHumilhacao,
+  perHumiliation: data.porOpressao,
 };
 
 /** XP needed to go from level `n` to `n + 1`. */

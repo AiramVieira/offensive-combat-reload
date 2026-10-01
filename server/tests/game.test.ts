@@ -146,3 +146,22 @@ describe('progresso', () => {
     expect(me.name).toMatch(/^Placar#\d{4}$/);
   });
 });
+
+describe('mapas', () => {
+  it('cada mapa tem uma sala fixa, e a sala criada leva o mapa escolhido', async () => {
+    const b = await signedIn('Cartografo');
+    const p = await Player.connect(game, await b.ticket());
+    p.send({ t: 'hello' });
+    const welcome = await p.next('welcome');
+    const fixed = welcome.sessions.filter((s) => s.permanent);
+    expect(fixed.map((s) => [s.id, s.map]).sort()).toEqual([['jardim', 'jardim'], ['principal', 'rua']]);
+
+    p.send({ t: 'create', name: 'Chá das cinco', map: 'jardim' });
+    expect((await p.next('joined')).session).toMatchObject({ name: 'Chá das cinco', map: 'jardim', permanent: false });
+
+    // A map the server doesn't know falls back to the default one.
+    p.send({ t: 'create', name: 'Lugar nenhum', map: 'atlantida' as never });
+    expect((await p.next('joined')).session.map).toBe('rua');
+    p.close();
+  });
+});

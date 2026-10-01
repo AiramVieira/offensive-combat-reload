@@ -13,6 +13,7 @@ import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
 import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
 import { ACCOUNT_XP } from '@shared/accountLevel';
 import { bodyStats } from '@shared/appearance';
+import type { MapId } from '@shared/maps';
 import { knifeData, levelInfo, rifleData, sanitizeLoadout, weaponOfKill, type Loadout } from '@shared/progression';
 import { accountLevelOf, addAccountXp, addTime, addWeaponXp, equip, equippedOf, progressMsg, type LevelUp, type LiveAccount } from './progress';
 import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
@@ -87,6 +88,7 @@ export class Session {
   constructor(
     readonly id: string,
     readonly name: string,
+    readonly map: MapId,
     readonly permanent: boolean,
     private now: () => number,
     private onChange: () => void,
@@ -95,7 +97,7 @@ export class Session {
   }
 
   get info(): SessionInfo {
-    return { id: this.id, name: this.name, players: this.players.size, max: NET.maxPlayers, permanent: this.permanent };
+    return { id: this.id, name: this.name, map: this.map, players: this.players.size, max: NET.maxPlayers, permanent: this.permanent };
   }
 
   get full() {

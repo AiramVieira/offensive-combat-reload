@@ -162,7 +162,7 @@ export class Sfx {
   impact(material: SurfaceMaterial) {
     if (!this.ready) return;
     const t = this.ctx!.currentTime;
-    const freq: Record<SurfaceMaterial, number> = { grass: 500, concrete: 1800, wood: 900, metal: 3200, glass: 4500, tile: 2400 };
+    const freq: Record<SurfaceMaterial, number> = { grass: 500, concrete: 1800, wood: 900, metal: 3200, glass: 4500, tile: 2400, paper: 700 };
     this.noiseBurst(t, material === 'metal' ? 0.12 : 0.05, 'bandpass', freq[material], material === 'metal' ? 6 : 1.5, 0.12);
     if (material === 'metal') this.tone(t, 'triangle', 2400 + Math.random() * 800, 2000, 0.15, 0.05);
   }
@@ -170,7 +170,7 @@ export class Sfx {
   footstep(material: SurfaceMaterial, loud: number) {
     if (!this.ready) return;
     const t = this.ctx!.currentTime;
-    const freq: Record<SurfaceMaterial, number> = { grass: 350, concrete: 700, wood: 450, metal: 1400, glass: 1200, tile: 900 };
+    const freq: Record<SurfaceMaterial, number> = { grass: 350, concrete: 700, wood: 450, metal: 1400, glass: 1200, tile: 900, paper: 500 };
     this.noiseBurst(t, 0.07, 'lowpass', freq[material] * (0.9 + Math.random() * 0.2), 1, 0.12 * loud);
     this.tone(t, 'sine', 90, 50, 0.06, 0.12 * loud);
   }
@@ -340,6 +340,34 @@ export class Sfx {
         src.stop(ctx.currentTime + 0.5);
       },
     };
+  }
+
+  /** Bronze gong: a mallet thud and inharmonic partials ringing for a few seconds. */
+  gong() {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(t, 0.08, 'lowpass', 600, 0.7, 0.3);
+    const partials: [number, number, number][] = [[92, 0.22, 4.5], [139, 0.14, 3.8], [197, 0.1, 3.2], [263, 0.07, 2.6], [354, 0.05, 2], [478, 0.03, 1.4]];
+    for (const [f, peak, dur] of partials) this.tone(t, 'sine', f * (0.99 + Math.random() * 0.02), f * 0.985, dur, peak, 'sfx', 0.012);
+  }
+
+  /** The fountain dragon: a growl that rises into a roar, over the whoosh of its fire breath. */
+  roar() {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    this.tone(t, 'sawtooth', 70, 150, 0.35, 0.14, 'sfx', 0.08);
+    this.tone(t + 0.3, 'sawtooth', 150, 60, 1.1, 0.16, 'sfx', 0.02);
+    this.tone(t + 0.3, 'square', 110, 48, 1.0, 0.05, 'sfx', 0.02);
+    this.noiseBurst(t + 0.25, 1.3, 'bandpass', 900, 0.6, 0.22);
+    this.noiseBurst(t + 0.35, 1.1, 'lowpass', 400, 0.7, 0.18);
+  }
+
+  /** A paper lantern taking a bullet: soft thump and a rustle. */
+  lanternTap() {
+    if (!this.ready) return;
+    const t = this.ctx!.currentTime;
+    this.noiseBurst(t, 0.12, 'bandpass', 700, 1.2, 0.14);
+    this.tone(t, 'sine', 420, 260, 0.12, 0.06);
   }
 
   splash() {

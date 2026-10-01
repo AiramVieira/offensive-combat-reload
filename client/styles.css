@@ -1037,6 +1037,19 @@ input[type='range'] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.s-name b,
+.s-name small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-name small {
+  font-size: 12px;
+  opacity: 0.6;
+}
+.s-name small:empty {
+  display: none;
+}
 .s-count {
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
@@ -1059,7 +1072,7 @@ input[type='range'] {
 }
 .session-create {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 10px;
   margin-top: 14px;
 }
@@ -1158,7 +1171,8 @@ input[type='range'] {
   align-items: center;
   gap: 6px;
 }
-.bot-options select {
+.bot-options select,
+.session-create select {
   font: 800 13px var(--body);
   border: 2px solid var(--ink);
   border-radius: 8px;

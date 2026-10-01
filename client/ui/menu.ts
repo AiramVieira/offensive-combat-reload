@@ -9,14 +9,7 @@ export class Screens {
   private tipTimer = 0;
 
   constructor() {
-    const tips = TIPS[getLang()];
-    let i = (Math.random() * tips.length) | 0;
-    const tip = $('loading-tip');
-    tip.textContent = tips[i];
-    this.tipTimer = window.setInterval(() => {
-      i = (i + 1) % tips.length;
-      tip.textContent = tips[i];
-    }, 2500);
+    this.startTips();
 
     $('menu-subtitle').textContent = t('subtitle');
     $('controls-title').textContent = t('controls');
@@ -50,6 +43,25 @@ export class Screens {
 
   setProgress(p: number) {
     $('loading-fill').style.width = `${Math.round(p * 100)}%`;
+  }
+
+  private startTips() {
+    const tips = TIPS[getLang()];
+    let i = (Math.random() * tips.length) | 0;
+    const tip = $('loading-tip');
+    tip.textContent = tips[i];
+    clearInterval(this.tipTimer);
+    this.tipTimer = window.setInterval(() => {
+      i = (i + 1) % tips.length;
+      tip.textContent = tips[i];
+    }, 2500);
+  }
+
+  /** Back to the loading screen (the map is built after the home screen, once it is chosen). */
+  showLoading() {
+    this.setProgress(0);
+    this.startTips();
+    $('loading').classList.remove('hidden');
   }
 
   hideLoading() {

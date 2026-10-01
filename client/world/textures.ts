@@ -300,6 +300,69 @@ export const PAINTERS: Record<string, Painter> = {
     grain(g, s, rand, 3);
   },
 
+  /**
+   * Shoji: warm rice paper on a wooden lattice (6 x 4 cells per tile, 30 x 45 cm). Painted in its final
+   * colors instead of gray: the paper is tinted white, so the lattice keeps its brown.
+   */
+  papel(g, s, rand) {
+    g.fillStyle = '#f7f1e3';
+    g.fillRect(0, 0, s, s);
+    // Fibers and the faint glow of light through the paper.
+    blotches(g, s, rand, 30, 20, 60, 255, 228, 0.1);
+    g.strokeStyle = 'rgba(190,170,130,0.18)';
+    g.lineWidth = 1;
+    for (let i = 0; i < 160; i++) {
+      const x = rand() * s;
+      const y = rand() * s;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (rand() - 0.5) * 30, y + (rand() - 0.5) * 30);
+      g.stroke();
+    }
+    const cols = 6;
+    const rows = 4;
+    const bar = s / 64;
+    g.fillStyle = '#6e4428';
+    for (let c = 0; c < cols; c++) wrapRect(g, s, (c * s) / cols - bar / 2, 0, bar, s);
+    for (let r = 0; r < rows; r++) wrapRect(g, s, 0, (r * s) / rows - bar / 2, s, bar);
+    // Lit edge on the lattice.
+    g.fillStyle = 'rgba(255,220,170,0.35)';
+    for (let c = 0; c < cols; c++) wrapRect(g, s, (c * s) / cols - bar / 2, 0, bar * 0.3, s);
+    grain(g, s, rand, 6);
+  },
+
+  /** Garden flagstones in irregular courses, with dark joints. */
+  pedra(g, s, rand) {
+    g.fillStyle = gray(120);
+    g.fillRect(0, 0, s, s);
+    const rows = [0.22, 0.3, 0.2, 0.28];
+    const joint = s / 80;
+    let y = 0;
+    for (const rh of rows) {
+      const h = rh * s;
+      let x = rand() * s;
+      const end = x + s;
+      while (x < end - 1) {
+        const w = Math.min(end - x, s * (0.18 + rand() * 0.22));
+        const v = 175 + rand() * 50;
+        for (const ox of [-s, 0]) {
+          g.fillStyle = gray(v);
+          g.beginPath();
+          g.roundRect(x + ox + joint / 2, y + joint / 2, w - joint, h - joint, s / 40);
+          g.fill();
+          g.fillStyle = gray(255, 0.12);
+          g.beginPath();
+          g.roundRect(x + ox + joint, y + joint, w - joint * 2, h * 0.25, s / 60);
+          g.fill();
+        }
+        x += w;
+      }
+      y += h;
+    }
+    blotches(g, s, rand, 40, 6, 24, 235, 150, 0.1);
+    grain(g, s, rand, 22);
+  },
+
   vidro(g, s) {
     g.fillStyle = gray(225);
     g.fillRect(0, 0, s, s);

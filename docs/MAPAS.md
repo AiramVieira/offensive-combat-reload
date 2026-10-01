@@ -35,6 +35,8 @@ Toda superfície estática do mapa usa uma das **superfícies da biblioteca** ([
 | `azulejo` | piscina, banheiros | 1 m | azulejo |
 | `metal` | carros, placas, hidrantes | 2 m | metal |
 | `vidro` | vidros | 2 m | vidro |
+| `papel` | paredes de papel (shoji), com a treliça de madeira pintada | 1,8 m | papel |
+| `pedra` | lajotas de jardim, caminhos, pedestais | 2,4 m | concreto |
 | `pintura` | cor lisa, sem textura | — | concreto |
 
 Hoje as texturas são **procedurais**, pintadas em canvas no carregamento ([client/world/textures.ts](../client/world/textures.ts)), como placeholder no estilo "pintado à mão". Elas são claras e quase sem cor de propósito: o tint dá o matiz.
@@ -81,9 +83,26 @@ Regras de medida que o jogo checa automaticamente:
 - **Janela do térreo** que deve dar para atravessar pulando agachado: peitoril a até **0,9 m** e topo a **2,3 m** ou mais.
 - Todo vão fica registrado em `map.openings`. O teste de estrutura passa um raio por cada vão e tenta atravessar cada porta andando.
 
+### Peças orientais
+
+[client/world/oriental.ts](../client/world/oriental.ts) tem as peças do "Jardim do Dragão" ([client/world/dragonGarden.ts](../client/world/dragonGarden.ts)), prontas para outros mapas:
+
+- `pavilion(b, spec)`: pavilhão de vários andares. Cada andar escolhe as paredes (`estuque`, `papel` ou `madeira`, inclusive por lado), portas e janelas, varanda com guarda-corpo (com colunas quando avança sobre o chão), beiral de telhas por baixo da laje (`skirt`, o visual de pagode) e escada interna com o vão na laje de cima. O último andar ganha o telhado curvo. Devolve as alturas dos pisos e os pontos para pendurar lanternas.
+- `curvedRoof(b, opts)`: telhado chinês côncavo com as pontas levantadas, de um retângulo de beiral até uma cumeeira (telhado de quatro águas), um ponto (pirâmide, com o pináculo dourado) ou outro retângulo (beiral sem topo).
+- `paperWall`, `moonGateWall` (portão lua cortado em fatias), `railing`, `column`, `wallCap`.
+- Natureza: `rock` (pedra com colisão convexa), `pine` (pinheiro de nuvens; cerejeira com outras cores), `bonsai`, `bamboo`, `stoneLantern`.
+- `dragonGeometry(caminho, raio, cores)`: dragão em volta de qualquer curva, com cabeça, chifres, bigodes, crista e patas; devolve a posição da boca.
+- Animados: `Lanterns` (lanternas penduradas que balançam com tiros), `Gong`, `FireBreath`, `Koi`.
+
+Pedras e árvores usam `seeded(semente)`, nunca `Math.random`: a colisão precisa ser igual em todos os clientes da sessão.
+
+### Mapas por sessão
+
+Os mapas jogáveis estão em [shared/maps.ts](../shared/maps.ts). Cada sessão online leva o id do mapa, e o servidor mantém uma sessão fixa por mapa. Para adicionar um mapa: registre o id ali, crie o `build...Map` em `client/world/` e ligue o id na escolha do mapa em [client/main.ts](../client/main.ts).
+
 ### Piadas do cenário sincronizadas
 
-Hidrantes, o caminhão de sorvete e os flamingos são registrados com `props.register('nome:indice', efeito)`, e isso devolve o `onShot` do colisor. Online, disparar uma piada avisa o servidor, que repassa aos outros, e todos veem o mesmo. Para criar uma nova, é o mesmo padrão; veja os hidrantes em [blockoutMap.ts](../client/world/blockoutMap.ts) e [hydrant.ts](../client/world/hydrant.ts).
+Hidrantes, o caminhão de sorvete, os flamingos, as lanternas, o gongo e o dragão são registrados com `props.register('nome:indice', efeito)`, e isso devolve o `onShot` do colisor. Online, disparar uma piada avisa o servidor, que repassa aos outros, e todos veem o mesmo. Para criar uma nova, é o mesmo padrão; veja os hidrantes em [blockoutMap.ts](../client/world/blockoutMap.ts) e [hydrant.ts](../client/world/hydrant.ts).
 
 ## 2. Blender → .glb
 
@@ -114,7 +133,7 @@ Hidrantes, o caminhão de sorvete e os flamingos são registrados com `props.reg
 
 | Propriedade | Em | Valores |
 | --- | --- | --- |
-| `fisica` | malhas e `COL_` | `wood`, `metal`, `concrete`, `grass`, `glass`, `tile`: som de passos e impacto. `wood` e `glass` são **atravessados por tiros** quando finos (até 40 cm e 10 cm no caminho da bala, veja `penetracao` no JSON da arma). Cercas, portas e paredes de madeira devem usar `wood`; caixotes grossos param o tiro sozinhos. |
+| `fisica` | malhas e `COL_` | `wood`, `metal`, `concrete`, `grass`, `glass`, `tile`, `paper`: som de passos e impacto. `wood`, `glass` e `paper` são **atravessados por tiros** quando finos (até 40 cm, 10 cm e 10 cm no caminho da bala, veja `penetracao` no JSON da arma; o papel tira só 5% do dano). Cercas, portas e paredes de madeira devem usar `wood`; caixotes grossos param o tiro sozinhos. |
 | `nocol` | malhas | `true`: sem colisão |
 | `uv_proprio` | malhas com `MAT_` | `true`: usa as UVs do Blender em vez da projeção automática em metros |
 | `eixo`, `amplitude`, `velocidade` | `DUMMY_*` | patrulha: `eixo` = `x` ou `z`, `amplitude` em metros, `velocidade` em rad/s |
@@ -165,12 +184,12 @@ Eles fazem o papel de arquivos exportados do Blender; abra-os no Blender (File �
 
 ### Metas por mapa (seção 3 do documento de design)
 
-| Item | Meta | "Rua dos Vizinhos" hoje |
-| --- | --- | --- |
-| Draw calls por quadro | < 300 | ~150 com sombras |
-| Triângulos visíveis | < 500 mil | ~50 mil |
-| Tempo de construção do mapa | — | ~50–90 ms |
-| Texturas | < 256 MB | 12 texturas procedurais de 512×512 (~16 MB com mipmaps) |
+| Item | Meta | "Rua dos Vizinhos" hoje | "Jardim do Dragão" hoje |
+| --- | --- | --- | --- |
+| Draw calls por quadro | < 300 | ~150 com sombras | ~130–210 com sombras |
+| Triângulos visíveis | < 500 mil | ~50 mil | ~180–280 mil |
+| Tempo de construção do mapa | — | ~50–90 ms | ~180–210 ms |
+| Texturas | < 256 MB | 12 texturas procedurais de 512×512 (~16 MB com mipmaps) | as mesmas, mais `papel` e `pedra` |
 
 Aperte **F3** no jogo para ver FPS, draw calls, triângulos, tempo de CPU e a GPU em uso.
 
