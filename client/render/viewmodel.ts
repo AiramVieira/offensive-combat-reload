@@ -1,9 +1,25 @@
-// First-person arms + rifle built from primitives (placeholder for weapons/rifle_padrao.glb).
-// Handles ADS blend, sprint pose, reload animation, bob, sway, strafe tilt and recoil kick (section 4).
+// First-person arms + rifle (the viewmodel), in their own scene and camera so they never clip into walls.
+// The rifle comes from the progression level (weaponModels.ts); the arms are the character's own forearms
+// and hands, faceted, in its skin and sleeve (viewmodelArms.ts), with PCD (a missing hand or arm is not
+// drawn; the knife or the grenade goes to the other hand).
+//
+// Procedural layers on top of the hip / ADS / sprint pose, each a damped spring (springs.ts) with every
+// number in VM_FEEL (tunable live with F6):
+// - sway: the rifle lags behind the mouse;
+// - bob: synced to the steps (one sine per two steps), different walking, running and crouched;
+// - recoil: a visual kick (back, up, a little sideways noise) separate from the aim recoil, settling in
+//   ~0.2 s;
+// - landing: the rifle sinks in proportion to the fall;
+// - strafe tilt: 2–4° when moving sideways;
+// - ADS: an ease-out blend, with sway and bob mostly gone while aiming.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { armGlove, armSleeve, bodyStats, type Appearance } from '@shared/appearance';
 import { PROGRESSION, type GrenadeKind, type KnifeModel, type RifleLevel } from '@shared/progression';
-import { PALETTE, toon, toonGradient } from './materials';
+import type { Sex } from '@shared/protocol';
+import { toonGradient } from './materials';
+import { Spring } from './springs';
+import { armMesh, placeArm } from './viewmodelArms';
 import { grenadeModel } from '../weapons/grenades';
 import { knifeModel, mineModel, rifleParts } from './weaponModels';
 
@@ -27,20 +43,65 @@ export interface ViewmodelState {
   crouch: number;
 }
 
-const HIP = new THREE.Vector3(0.15, -0.15, -0.4);
-const ADS_Z = -0.36;
-const SPRINT = new THREE.Vector3(0.1, -0.2, -0.34);
+type V3 = [number, number, number];
+
+/** Every "feel" number of the first-person view. Tunable live (F6); copy the result back here. */
+export const VM_FEEL = {
+  /** Rifle (grip) in camera space: hip fire, sprint; ADS comes from the sight's height. */
+  pose: {
+    hip: [0.15, -0.15, -0.4] as V3,
+    sprint: [0.1, -0.2, -0.34] as V3,
+    /** Sprint rotation (x, y, z rad). */
+    sprintRot: [-0.35, 0.75, 0.25] as V3,
+    adsZ: -0.36,
+  },
+  /** ADS blend: ease-out (exponent; 3 = cubic). */
+  ads: { ease: 3 },
+  /** Sway: rifle lag behind the mouse. */
+  sway: { perPixel: 0.0009, max: 0.05, pos: 0.5, rot: 1.5, settle: 0.22, bounce: 0.25, adsKeep: 0.2 },
+  /** Bob: amplitude (x, y m; roll rad), stride of one step (m), multipliers by state. */
+  bob: { x: 0.011, y: 0.012, roll: 0.02, step: 0.75, run: 1.8, crouch: 0.55, adsKeep: 0.15, follow: 8 },
+  /** Visual recoil (peaks per shot), settling time and the most it piles up to. */
+  recoil: { back: 0.028, up: 0.045, side: 0.012, settle: 0.2, maxBack: 0.07, maxUp: 0.14, adsKeep: 0.5 },
+  /** Landing: sink (m) = base + perMeter × fall height, up to max. */
+  landing: { base: 0.015, perMeter: 0.008, max: 0.07, settle: 0.35, bounce: 0.2 },
+  /** Strafe tilt: roll (rad) at full strafe speed. */
+  tilt: { max: 0.06, atSpeed: 5, settle: 0.25, adsKeep: 0.3 },
+  /** Arms (gun space): wrist, elbow, roll around the forearm, how closed the hand is. */
+  arms: {
+    right: { wrist: [0.035, -0.085, 0.12] as V3, elbow: [0.12, -0.24, 0.38] as V3, roll: -1.45, grip: 0.92 },
+    left: { wrist: [-0.045, -0.088, -0.13] as V3, elbow: [-0.21, -0.28, 0.13] as V3, roll: 2.55, grip: 0.42 },
+  },
+};
+
 const MUZZLE_LOCAL = new THREE.Vector3(0, 0.012, -0.47);
+const v3 = (a: V3) => new THREE.Vector3(a[0], a[1], a[2]);
+
+/** Peak displacement → impulse for a critically damped spring (peak = v / (ω·e)). */
+const impulseFor = (s: Spring, peak: number) => peak * Math.sqrt(s.stiffness) * Math.E;
 
 export class Viewmodel {
   readonly root = new THREE.Group();
   private gun = new THREE.Group();
   private mag!: THREE.Mesh;
   private knife = new THREE.Group();
+  /** Mirrors the knife to the left hand when the right one is missing. */
+  private knifeSide = new THREE.Group();
+  private grenadeSide = new THREE.Group();
+  private arms = new THREE.Group();
+  private knifeArm = new THREE.Group();
+  private grenadeHandArm = new THREE.Group();
+  private skin = '#e8bfa0';
+  private sex: Sex = 'm';
+  /** Long sleeve color over the forearms (null = bare forearms). */
+  private sleeve: string | null = null;
+  /** Gloves on the hands (catalog id and colors), or none. */
+  private glove: ReturnType<typeof armGlove> = null;
+  private missing = { armL: false, armR: false, handL: false, handR: false };
   private knifeItem: THREE.Object3D | null = null;
   private grenadeArm = new THREE.Group();
   private grenadeInHand: THREE.Object3D = new THREE.Group();
-  private ads = new THREE.Vector3(0, -0.057, ADS_Z);
+  private ads = new THREE.Vector3(0, -0.057, VM_FEEL.pose.adsZ);
   /** The equipped rifle has a magnified scope (the game swaps to the scope overlay when fully aimed). */
   scoped = false;
   private flashGroup = new THREE.Group();
@@ -48,18 +109,18 @@ export class Viewmodel {
   private sprintT = 0;
   private bobPhase = 0;
   private bobAmp = 0;
-  private sway = new THREE.Vector2();
-  private kickBack = 0;
-  private kickRot = 0;
-  private tilt = 0;
-  private landDip = 0;
+  private swayX = Spring.settling(0.22, 0.25);
+  private swayY = Spring.settling(0.22, 0.25);
+  private tiltS = Spring.settling(0.25);
+  private kickBack = Spring.settling(0.2);
+  private kickUp = Spring.settling(0.2);
+  private kickSide = Spring.settling(0.2);
+  private land = Spring.settling(0.35, 0.2);
   /** 0..1: how far the rifle is lowered for a melee swing (smoothed so it comes back only afterwards). */
   private meleeDuck = 0;
   private tmp = new THREE.Vector3();
 
   constructor(vmScene: THREE.Scene) {
-    const skin = toon(PALETTE.skin);
-    const sleeve = toon(PALETTE.sleeve);
     // Muzzle flash: two crossed additive quads.
     const flashMat = new THREE.MeshBasicMaterial({ map: flashTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const quad = new THREE.PlaneGeometry(0.16, 0.16);
@@ -72,34 +133,72 @@ export class Viewmodel {
     this.flashGroup.visible = false;
     this.gun.add(this.flashGroup);
 
-    // Knife (or whatever the knife level is) + right hand, shown only during a melee swing.
-    const fist = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.08), skin);
-    fist.position.z = 0.02;
-    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.3), sleeve);
-    forearm.position.set(0.02, -0.02, 0.2);
-    this.knife.add(fist, forearm);
+    // Knife (or whatever the knife level is) in the right fist, shown only during a melee swing.
+    this.knife.add(this.knifeArm);
     this.setKnife('faca');
     this.knife.visible = false;
 
     // Left arm holding a grenade (or a mine, or two grenades), shown while cooking/throwing.
+    this.grenadeArm.add(this.grenadeHandArm);
     this.setGrenadeKind('granada');
-    const gHand = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.06, 0.08), skin);
-    gHand.position.set(0, -0.03, 0.01);
-    const gSleeve = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.32), sleeve);
-    gSleeve.position.set(-0.02, -0.06, 0.2);
-    gSleeve.rotation.x = 0.35;
-    this.grenadeArm.add(this.grenadeInHand, gHand, gSleeve);
     this.grenadeArm.visible = false;
 
     this.setRifle(PROGRESSION.rifle[0]);
-    this.root.add(this.gun, this.knife, this.grenadeArm);
+    this.knifeSide.add(this.knife);
+    this.grenadeSide.add(this.grenadeArm);
+    this.root.add(this.gun, this.knifeSide, this.grenadeSide);
     vmScene.add(this.root);
+  }
+
+  /** The character's arms: skin, sleeve, and which hand or arm is missing (PCD). */
+  setBody(look: Appearance, sex: Sex = this.sex) {
+    const m = bodyStats(look).missing;
+    this.missing = { armL: m.armL, armR: m.armR, handL: m.handL, handR: m.handR };
+    this.skin = look.pele;
+    this.sex = sex;
+    const sleeve = armSleeve(look);
+    this.sleeve = sleeve?.long ? sleeve.color : null;
+    this.glove = armGlove(look);
+    // No right hand: the knife is swung with the left one. No left hand: the grenade goes in the right.
+    // (A mirrored group: its children keep their animation, on the other side.)
+    this.knifeSide.scale.x = m.handR ? -1 : 1;
+    this.grenadeSide.scale.x = m.handL ? -1 : 1;
+    this.buildArms();
+  }
+
+  /** Rebuilds the arms on the rifle (PCD: a missing hand leaves the forearm, a missing arm leaves nothing). */
+  private buildArms() {
+    for (const g of [this.arms, this.knifeArm, this.grenadeHandArm]) {
+      for (const child of [...g.children]) {
+        g.remove(child);
+        ((child as THREE.Mesh).material as THREE.Material)?.dispose();
+      }
+    }
+    const A = VM_FEEL.arms;
+    const opts = (grip: number, hand: boolean) => ({ sleeve: this.sleeve, skin: this.skin, grip, hand, glove: this.glove });
+    if (!this.missing.armR) {
+      const r = armMesh(this.sex, 1, opts(A.right.grip, !this.missing.handR));
+      placeArm(r, v3(A.right.elbow), v3(A.right.wrist), A.right.roll);
+      this.arms.add(r);
+    }
+    if (!this.missing.armL) {
+      const l = armMesh(this.sex, -1, opts(A.left.grip, !this.missing.handL));
+      placeArm(l, v3(A.left.elbow), v3(A.left.wrist), A.left.roll);
+      this.arms.add(l);
+    }
+    // The knife's fist and the grenade's open hand (their groups are mirrored when that hand is missing).
+    const k = armMesh(this.sex, 1, opts(1, true));
+    placeArm(k, new THREE.Vector3(0.03, -0.06, 0.32), new THREE.Vector3(0, -0.01, 0.07), -1.5);
+    this.knifeArm.add(k);
+    const g = armMesh(this.sex, -1, opts(0.45, true));
+    placeArm(g, new THREE.Vector3(-0.03, -0.14, 0.3), new THREE.Vector3(0, -0.05, 0.06), Math.PI);
+    this.grenadeHandArm.add(g);
   }
 
   /** Rebuilds the rifle for a progression level: its sight, paint job and the matching ADS pose. */
   setRifle(level: RifleLevel) {
     for (const child of [...this.gun.children]) {
-      if (child === this.flashGroup) continue;
+      if (child === this.flashGroup || child === this.arms) continue;
       this.gun.remove(child);
       child.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
     }
@@ -107,27 +206,13 @@ export class Viewmodel {
     for (const m of parts.meshes) this.gun.add(m);
     this.mag = parts.mag;
     this.gun.add(this.mag);
-    // Arms: sleeve + hand boxes stretched between two points. Right hand on the grip, left under the handguard.
-    const skin = toon(PALETTE.skin);
-    const sleeve = toon(PALETTE.sleeve);
-    const band = toon(PALETTE.teamA);
-    const limb = (from: THREE.Vector3, to: THREE.Vector3, thick: number, mat: THREE.Material) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(thick, thick, from.distanceTo(to)), mat);
-      m.position.copy(from).add(to).multiplyScalar(0.5);
-      m.lookAt(to);
-      this.gun.add(m);
-    };
-    limb(new THREE.Vector3(0.012, -0.06, 0.1), new THREE.Vector3(0.012, -0.075, 0.05), 0.05, skin);
-    limb(new THREE.Vector3(0.02, -0.08, 0.12), new THREE.Vector3(0.09, -0.2, 0.34), 0.07, sleeve);
-    limb(new THREE.Vector3(0.05, -0.13, 0.21), new THREE.Vector3(0.062, -0.15, 0.245), 0.074, band);
-    limb(new THREE.Vector3(-0.005, -0.04, -0.24), new THREE.Vector3(-0.01, -0.055, -0.18), 0.052, skin);
-    limb(new THREE.Vector3(-0.02, -0.06, -0.2), new THREE.Vector3(-0.17, -0.24, 0.1), 0.07, sleeve);
-    limb(new THREE.Vector3(-0.1, -0.15, -0.05), new THREE.Vector3(-0.115, -0.17, -0.02), 0.074, band);
     for (const gl of parts.glow) this.gun.add(gl);
     if (!this.flashGroup.parent) this.gun.add(this.flashGroup);
-    bakeStaticParts(this.gun, [this.mag, this.flashGroup, ...parts.glow]);
-    this.ads.set(0, -parts.sightY, ADS_Z);
+    if (!this.arms.parent) this.gun.add(this.arms);
+    bakeStaticParts(this.gun, [this.mag, this.flashGroup, this.arms, ...parts.glow]);
+    this.ads.set(0, -parts.sightY, VM_FEEL.pose.adsZ);
     this.scoped = parts.scoped;
+    if (!this.arms.children.length) this.buildArms();
   }
 
   /** Swaps what the melee hand swings (knife, wooden spoon, rubber chicken...). */
@@ -169,9 +254,12 @@ export class Viewmodel {
     this.grenadeArm.add(item);
   }
 
+  /** A shot: visual kick back, up and a little sideways (the aim recoil is the weapon's, apart). */
   kick() {
-    this.kickBack = Math.min(this.kickBack + 0.028, 0.07);
-    this.kickRot = Math.min(this.kickRot + 0.045, 0.14);
+    const R = VM_FEEL.recoil;
+    if (this.kickBack.value < R.maxBack) this.kickBack.impulse(impulseFor(this.kickBack, R.back));
+    if (this.kickUp.value < R.maxUp) this.kickUp.impulse(impulseFor(this.kickUp, R.up));
+    this.kickSide.impulse(impulseFor(this.kickSide, (Math.random() * 2 - 1) * R.side));
   }
 
   flash() {
@@ -181,8 +269,10 @@ export class Viewmodel {
     this.flashGroup.scale.set(s, s, s * 1.4);
   }
 
-  landed(strength: number) {
-    this.landDip = Math.min(0.06, 0.015 + strength * 0.008);
+  /** Landed after falling `fallHeight` meters: the rifle sinks in proportion and springs back. */
+  landed(fallHeight: number) {
+    const L = VM_FEEL.landing;
+    this.land.impulse(-impulseFor(this.land, Math.min(L.max, L.base + fallHeight * L.perMeter)));
   }
 
   // Keyframes: wind up to the right, stab forward-left at the impact moment (~30%), then retract.
@@ -222,35 +312,54 @@ export class Viewmodel {
     return out.copy(MUZZLE_LOCAL).applyMatrix4(this.gun.matrixWorld);
   }
 
+  /** Re-applies the tuning (springs and arms) after VM_FEEL changed (the F6 panel). */
+  retune() {
+    const F = VM_FEEL;
+    this.swayX.tune(F.sway.settle, F.sway.bounce);
+    this.swayY.tune(F.sway.settle, F.sway.bounce);
+    this.tiltS.tune(F.tilt.settle);
+    for (const s of [this.kickBack, this.kickUp, this.kickSide]) s.tune(F.recoil.settle);
+    this.land.tune(F.landing.settle, F.landing.bounce);
+    this.ads.z = F.pose.adsZ;
+    this.buildArms();
+  }
+
   update(dt: number, s: ViewmodelState) {
+    const F = VM_FEEL;
     const k = (rate: number) => 1 - Math.exp(-rate * dt);
     this.sprintT += ((s.sprint > 0.5 ? 1 : 0) - this.sprintT) * k(10);
 
-    // Base pose: hip -> ADS -> sprint.
-    const pos = this.tmp.copy(HIP).lerp(this.ads, s.ads).lerp(SPRINT, this.sprintT);
-    let rx = this.sprintT * -0.35;
-    let ry = this.sprintT * 0.75;
-    let rz = this.sprintT * 0.25;
+    // Base pose: hip -> ADS (ease-out) -> sprint.
+    const ads = 1 - Math.pow(1 - THREE.MathUtils.clamp(s.ads, 0, 1), F.ads.ease);
+    const pos = this.tmp.copy(v3(F.pose.hip)).lerp(this.ads, ads).lerp(v3(F.pose.sprint), this.sprintT);
+    let rx = this.sprintT * F.pose.sprintRot[0];
+    let ry = this.sprintT * F.pose.sprintRot[1];
+    let rz = this.sprintT * F.pose.sprintRot[2];
 
-    // Walk bob, reduced while aiming.
+    // Bob: one sine per two steps, the phase driven by the distance walked (it stays in step with the feet).
     const moving = s.grounded && s.speed > 0.5;
-    this.bobAmp += ((moving ? Math.min(1.4, s.speed / 5.5) : 0) - this.bobAmp) * k(8);
-    this.bobPhase += dt * (4 + s.speed * 1.35);
-    const bobScale = this.bobAmp * (1 - s.ads * 0.85) * (1 + this.sprintT * 0.8);
-    pos.x += Math.sin(this.bobPhase) * 0.011 * bobScale;
-    pos.y += -Math.abs(Math.cos(this.bobPhase)) * 0.012 * bobScale;
-    rz += Math.sin(this.bobPhase) * 0.02 * bobScale;
+    const stateAmp = moving ? Math.min(1.4, s.speed / 5.5) * (1 + (F.bob.run - 1) * this.sprintT) * (1 + (F.bob.crouch - 1) * s.crouch) : 0;
+    this.bobAmp += (stateAmp - this.bobAmp) * k(F.bob.follow);
+    this.bobPhase += ((s.speed * dt) / F.bob.step) * Math.PI;
+    const bob = this.bobAmp * (1 - ads * (1 - F.bob.adsKeep));
+    pos.x += Math.sin(this.bobPhase) * F.bob.x * bob;
+    pos.y += -Math.abs(Math.cos(this.bobPhase)) * F.bob.y * bob;
+    rz += Math.sin(this.bobPhase) * F.bob.roll * bob;
 
-    // Sway lags behind mouse movement; strafe tilt.
-    const swayScale = 1 - s.ads * 0.8;
-    this.sway.x += (THREE.MathUtils.clamp(-s.mouseDX * 0.0009, -0.05, 0.05) - this.sway.x) * k(10);
-    this.sway.y += (THREE.MathUtils.clamp(s.mouseDY * 0.0009, -0.05, 0.05) - this.sway.y) * k(10);
-    pos.x += this.sway.x * 0.5 * swayScale;
-    pos.y += this.sway.y * 0.5 * swayScale;
-    ry += this.sway.x * 1.5 * swayScale;
-    rx += this.sway.y * 1.5 * swayScale;
-    this.tilt += (-s.strafe * 0.012 * (1 - s.ads * 0.7) - this.tilt) * k(8);
-    rz += this.tilt;
+    // Sway: the rifle lags behind the mouse (a springy follow).
+    const sway = 1 - ads * (1 - F.sway.adsKeep);
+    this.swayX.target = THREE.MathUtils.clamp(-s.mouseDX * F.sway.perPixel, -F.sway.max, F.sway.max);
+    this.swayY.target = THREE.MathUtils.clamp(s.mouseDY * F.sway.perPixel, -F.sway.max, F.sway.max);
+    const sx = this.swayX.update(dt);
+    const sy = this.swayY.update(dt);
+    pos.x += sx * F.sway.pos * sway;
+    pos.y += sy * F.sway.pos * sway;
+    ry += sx * F.sway.rot * sway;
+    rx += sy * F.sway.rot * sway;
+
+    // Strafe tilt (2–4°).
+    this.tiltS.target = -THREE.MathUtils.clamp(s.strafe / F.tilt.atSpeed, -1, 1) * F.tilt.max * (1 - ads * (1 - F.tilt.adsKeep));
+    rz += this.tiltS.update(dt);
 
     // Reload: tilt the gun, drop the mag out of frame and bring it back.
     if (s.reload !== null) {
@@ -270,16 +379,15 @@ export class Viewmodel {
     pos.y -= s.slide * 0.02 * (1 - s.ads);
     pos.x -= s.slide * 0.02 * (1 - s.ads);
 
-    // Recoil kick and landing dip (critically damped decay).
-    this.kickBack *= Math.exp(-16 * dt);
-    this.kickRot *= Math.exp(-14 * dt);
-    this.landDip *= Math.exp(-9 * dt);
-    pos.z += this.kickBack * (1 - s.ads * 0.4);
-    rx += this.kickRot * (1 - s.ads * 0.6);
-    pos.y -= this.landDip + s.crouch * 0.01;
+    // Recoil (visual kick) and landing, both springs.
+    const kick = 1 - ads * (1 - F.recoil.adsKeep);
+    pos.z += this.kickBack.update(dt) * kick;
+    rx += this.kickUp.update(dt) * kick;
+    ry += this.kickSide.update(dt) * kick;
+    pos.y += this.land.update(dt) - s.crouch * 0.01;
 
     // Knife swing: the rifle ducks out of view quickly, stays down for the whole swing and is only drawn
-    // back up once the knife is gone (it used to come back while the knife was still on screen).
+    // back up once the knife is gone.
     const meleeOn = s.melee !== null;
     this.meleeDuck += ((meleeOn ? 1 : 0) - this.meleeDuck) * k(meleeOn ? 24 : 11);
     if (this.meleeDuck > 0.001) {
@@ -310,9 +418,9 @@ export class Viewmodel {
         arm.rotation.set(0.25, 0.2, 0.15);
         this.grenadeInHand.visible = true;
       } else {
-        const k = Math.min(1, s.grenadeThrow! / 0.12);
-        arm.position.set(-0.16 + k * 0.06, -0.18 + k * 0.06 - outT * 0.3, -0.5 - k * 0.25);
-        arm.rotation.set(0.25 - k * 0.9, 0.2, 0.15);
+        const kk = Math.min(1, s.grenadeThrow! / 0.12);
+        arm.position.set(-0.16 + kk * 0.06, -0.18 + kk * 0.06 - outT * 0.3, -0.5 - kk * 0.25);
+        arm.rotation.set(0.25 - kk * 0.9, 0.2, 0.15);
         this.grenadeInHand.visible = s.grenadeThrow! < 0.05; // released
       }
       arm.visible = true;

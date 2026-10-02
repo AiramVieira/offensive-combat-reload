@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { GROUP, groups, HUMILIATION, MOVE } from '@shared/constants';
 import type { Vec3 } from '@shared/protocol';
-import { Avatar, ENEMY_COLORS, LOCAL_COLORS } from '../entities/avatar';
+import { defaultAppearance, type Appearance } from '@shared/appearance';
+import { Avatar } from '../entities/avatar';
 import { CorpseTimer } from '../ui/corpseTimer';
 import type { Humiliable } from './targets';
 import type { Sex } from '@shared/protocol';
@@ -20,6 +21,8 @@ export interface CorpseData {
   name: string;
   /** Body type of whoever died (masculino / feminino). */
   sex?: Sex;
+  /** How they looked: the body keeps it. */
+  ap?: Appearance;
   /** Feet position at the moment of death (may be mid-air). */
   p: Vec3;
   yaw: number;
@@ -64,7 +67,7 @@ export class Corpse implements Humiliable {
     private hooks: CorpseHooks,
   ) {
     this.y = info.p[1];
-    this.avatar = new Avatar(scene, info.victim === me ? LOCAL_COLORS : ENEMY_COLORS, info.sex ?? 'm');
+    this.avatar = new Avatar(scene, info.ap ?? defaultAppearance(info.sex ?? 'm'), info.sex ?? 'm');
     this.avatar.root.position.set(...info.p);
     this.avatar.root.rotation.y = info.yaw;
     this.avatar.visible = true;

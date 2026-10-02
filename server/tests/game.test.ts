@@ -1,6 +1,6 @@
 // The game connection: single-use tickets, origin check, one connection per account, revocation, and
 // progress earned only from kills the server validated.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { CLOSE } from '@shared/protocol';
 import type { GameServer } from '../app';
 import { ticketKey } from '../api';
@@ -35,7 +35,8 @@ describe('ticket do WebSocket', () => {
     const b = await signedIn();
     const ticket = await b.ticket();
     const p = await Player.connect(game, ticket);
-    await expect(Player.connect(game, ticket)).rejects.toThrow('401');
+    await expect(Player.connect(game, ticket)).rejects.toThrow('recusado');
+    expect(await Player.refusal(game, ticket)).toBe(401);
     p.close();
   });
 
@@ -44,12 +45,22 @@ describe('ticket do WebSocket', () => {
     const ticket = await b.ticket();
     await game.deps.redis.pexpire(ticketKey(ticket), 1);
     await sleep(20);
-    await expect(Player.connect(game, ticket)).rejects.toThrow('401');
+    expect(await Player.refusal(game, ticket)).toBe(401);
   });
 
   it('recusa handshake vindo de outro site', async () => {
     const b = await signedIn();
-    await expect(Player.connect(game, await b.ticket(), 'http://site-malicioso.com')).rejects.toThrow('403');
+    const ticket = await b.ticket();
+    expect(await Player.refusal(game, ticket, 'http://site-malicioso.com')).toBe(403);
+    // The refused handshake didn't spend the ticket, and the page's own origin still gets in.
+    (await Player.connect(game, ticket)).close();
+  });
+
+  it('não gasta o ticket com um GET comum', async () => {
+    const b = await signedIn();
+    const ticket = await b.ticket();
+    expect((await fetch(`http://127.0.0.1:${game.port}/ws?ticket=${ticket}`)).status).toBe(426);
+    (await Player.connect(game, ticket)).close();
   });
 
   it('sem sessão não há ticket', async () => {
@@ -163,5 +174,30 @@ describe('mapas', () => {
     p.send({ t: 'create', name: 'Lugar nenhum', map: 'atlantida' as never });
     expect((await p.next('joined')).session.map).toBe('rua');
     p.close();
+  });
+});
+
+describe('armas vistas pelos outros', () => {
+  it('trocar o equipamento avisa os outros jogadores, que recebem o loadout validado', async () => {
+    const a = await joinMain(await signedIn('Atirador'));
+    const b = await joinMain(await signedIn('Observador'));
+    a.p.send({ t: 'loadout', lo: { rifle: 1, faca: 1, granada: 1 } });
+    const m = await b.p.next('playerLoadout', (x) => x.id === a.joined.you);
+    expect(m.lo).toEqual({ rifle: 1, faca: 1, granada: 1 });
+    // Levels the account hasn't unlocked never reach the others.
+    a.p.send({ t: 'loadout', lo: { rifle: 9, faca: 7, granada: 3 } });
+    const n = await b.p.next('playerLoadout', (x) => x.id === a.joined.you);
+    expect(n.lo).toEqual({ rifle: 1, faca: 1, granada: 1 });
+    a.p.close();
+    b.p.close();
+  });
+
+  it('quem entra recebe o loadout de quem já está na partida', async () => {
+    const a = await joinMain(await signedIn('Veterano'));
+    const b = await joinMain(await signedIn('Novato'));
+    const info = b.joined.players.find((p) => p.id === a.joined.you);
+    expect(info?.lo).toBeDefined();
+    a.p.close();
+    b.p.close();
   });
 });

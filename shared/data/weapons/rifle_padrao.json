@@ -10,10 +10,15 @@
     "distMin": 45
   },
   "multiplicadores": {
-    "cabeca": 2.0,
-    "tronco": 1.0,
-    "bracos": 0.9,
-    "pernas": 0.8
+    "cabeca": 2.5,
+    "pescoco": 1.5,
+    "peito": 1.0,
+    "abdomen": 1.0,
+    "quadril": 0.9,
+    "bracos": 0.75,
+    "maos": 0.5,
+    "coxas": 0.75,
+    "canelas": 0.6
   },
   "cadencia": 700,
   "modo": "auto",

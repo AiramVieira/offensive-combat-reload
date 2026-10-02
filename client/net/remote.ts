@@ -1,18 +1,19 @@
 // Other players and corpses in an online session. Remote players are drawn NET.interpDelayMs in the past,
-// interpolating between the two server snapshots around that time, and carry the same hitboxes as the
-// training dummies so shooting them works identically.
+// interpolating between the two server snapshots around that time, and carry the same hitboxes as everyone
+// (entities/rig.ts), in the pose their flags describe, so shooting them works identically.
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { FLAG, NET, type CorpseInfo, type NetState, type PlayerInfo, type Sex } from '@shared/protocol';
+import { DEFAULT_LOADOUT, type Loadout } from '@shared/progression';
 import type { HitRegion } from '@shared/weapons';
-import { Avatar, ENEMY_COLORS } from '../entities/avatar';
-import { createCharacterColliders, isBehind, refineRegion } from '../entities/hitboxes';
+import { bodyStats, defaultAppearance, type Appearance } from '@shared/appearance';
+import { Avatar } from '../entities/avatar';
+import { isBehind } from '../entities/hitboxes';
+import { CharacterRig, type HitPose } from '../entities/rig';
 import type { HitboxRegistry, Target } from '../gameplay/targets';
 import { Corpse, groundBelow } from '../gameplay/corpse';
 import type { Connection } from './connection';
 
-const UP = new THREE.Vector3(0, 1, 0);
-const CROUCH_DROP = 0.35;
 
 interface Snap {
   t: number;
@@ -55,44 +56,65 @@ export class RemotePlayer implements Target {
   pitch = 0;
   flags = 0;
   speed = 0;
+  /** Smoothed horizontal velocity (drives the 8-way locomotion). */
+  private vel = { x: 0, z: 0 };
   private buffer: Snap[] = [];
   private avatar: Avatar;
   private plate: THREE.Sprite;
-  private body: RAPIER.RigidBody;
-  private colliders: RAPIER.Collider[];
-  private debug: THREE.Group;
+  private rig: CharacterRig;
   private danceT: number | null = null;
+  private loadoutKey = '';
   private lastPos = new THREE.Vector3();
 
   constructor(
     readonly id: number,
     public name: string,
     readonly sex: Sex,
-    private world: RAPIER.World,
+    look: Appearance,
+    world: RAPIER.World,
     private scene: THREE.Scene,
     registry: HitboxRegistry,
   ) {
-    this.avatar = new Avatar(scene, ENEMY_COLORS, sex);
+    // Everyone appears the way they customized their character.
+    this.avatar = new Avatar(scene, look, sex);
+    const body = bodyStats(look);
     this.plate = nameplate(name, '#ff8a80');
+    this.plate.position.y *= body.visualScale;
     this.avatar.root.add(this.plate);
-    this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -100, 0));
-    const cc = createCharacterColliders(world, this.body, this, registry);
-    this.colliders = cc.colliders;
-    this.debug = cc.debug;
-    this.avatar.root.add(this.debug);
-    this.setColliders(false);
+    this.rig = new CharacterRig(world, this, registry, body.missing);
+    this.avatar.root.add(this.rig.debug);
+    this.rig.follow(this.position, 0, false, { kind: 'idle', t: 0 }, 0);
   }
 
   get dead() {
     return !this.alive;
   }
 
-  private setColliders(on: boolean) {
-    for (const c of this.colliders) c.setEnabled(on);
+  setDebug(v: boolean) {
+    this.rig.setDebug(v);
   }
 
-  setDebug(v: boolean) {
-    this.debug.visible = v;
+  /** What the body is doing, from the flags: the avatar plays it and the hitboxes follow it. */
+  private currentPose(): HitPose {
+    const f = this.flags;
+    if (f & FLAG.dance) return { kind: 'dance', t: this.danceT ?? 0 };
+    return {
+      kind: 'armed',
+      pose: {
+        speed: this.speed,
+        vel: this.vel,
+        yaw: this.yaw,
+        grounded: !!(f & FLAG.grounded),
+        sprint: !!(f & FLAG.sprint),
+        crouch: !!(f & FLAG.crouch),
+        slide: !!(f & FLAG.slide),
+        pitch: this.pitch,
+        ads: !!(f & FLAG.ads),
+        reload: !!(f & FLAG.reload),
+        knife: !!(f & FLAG.knife),
+        cook: !!(f & FLAG.cook),
+      },
+    };
   }
 
   push(time: number, s: NetState, alive: boolean, health: number) {
@@ -101,7 +123,8 @@ export class RemotePlayer implements Target {
       this.alive = alive;
       // Respawns teleport: drop the old history so we don't interpolate across the map.
       if (alive) this.buffer.length = 0;
-      this.setColliders(alive);
+      // Dead = no hitboxes, from the same tick.
+      if (!alive) this.rig.follow(this.position, this.yaw, false, this.currentPose(), 0);
     }
     if (!alive) return;
     this.buffer.push({ t: time, s });
@@ -111,7 +134,7 @@ export class RemotePlayer implements Target {
   /** Samples the interpolated state at server time `t` and moves the hitboxes there. */
   update(t: number, dt: number) {
     if (!this.alive || this.buffer.length === 0) {
-      this.body.setNextKinematicTranslation({ x: 0, y: -100, z: 0 });
+      this.rig.follow(this.position.set(0, -100, 0), this.yaw, false, this.currentPose(), 0);
       return;
     }
     const b = this.buffer;
@@ -133,14 +156,15 @@ export class RemotePlayer implements Target {
     }
     this.lastPos.copy(this.position);
     this.position.set(s.p[0], s.p[1], s.p[2]);
-    if (dt > 0) this.speed = this.speed * 0.8 + (Math.hypot(this.position.x - this.lastPos.x, this.position.z - this.lastPos.z) / dt) * 0.2;
+    if (dt > 0) {
+      this.speed = this.speed * 0.8 + (Math.hypot(this.position.x - this.lastPos.x, this.position.z - this.lastPos.z) / dt) * 0.2;
+      this.vel.x = this.vel.x * 0.8 + ((this.position.x - this.lastPos.x) / dt) * 0.2;
+      this.vel.z = this.vel.z * 0.8 + ((this.position.z - this.lastPos.z) / dt) * 0.2;
+    }
     this.yaw = s.yaw;
     this.pitch = s.pitch;
     this.flags = s.f;
-    const drop = s.f & FLAG.crouch ? CROUCH_DROP : 0;
-    const q = new THREE.Quaternion().setFromAxisAngle(UP, this.yaw);
-    this.body.setNextKinematicTranslation({ x: s.p[0], y: s.p[1] - drop, z: s.p[2] });
-    this.body.setNextKinematicRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
+    this.rig.follow(this.position, this.yaw, true, this.currentPose(), dt);
   }
 
   render(dt: number) {
@@ -148,23 +172,34 @@ export class RemotePlayer implements Target {
     if (!this.avatar.visible) return;
     this.avatar.root.position.copy(this.position);
     this.avatar.root.rotation.y = this.yaw;
-    const f = this.flags;
-    if (f & FLAG.dance) {
-      this.danceT = (this.danceT ?? 0) + dt;
-      this.avatar.dance(this.danceT);
-    } else {
-      this.danceT = null;
-      this.avatar.pose(dt, {
-        speed: this.speed,
-        crouch: !!(f & FLAG.crouch),
-        slide: !!(f & FLAG.slide),
-        pitch: this.pitch,
-        ads: !!(f & FLAG.ads),
-        reload: !!(f & FLAG.reload),
-        knife: !!(f & FLAG.knife),
-        cook: !!(f & FLAG.cook),
-      });
-    }
+    if (this.flags & FLAG.dance) this.danceT = (this.danceT ?? 0) + dt;
+    else this.danceT = null;
+    const pose = this.currentPose();
+    if (pose.kind === 'dance') this.avatar.dance(pose.t);
+    else if (pose.kind === 'armed') this.avatar.pose(dt, pose.pose);
+  }
+
+  /** A shot of theirs: recoil on the avatar. */
+  fire() {
+    this.avatar.fire();
+  }
+
+  /** Their equipped weapon levels (the models in their hands). */
+  setLoadout(lo: Loadout) {
+    const key = JSON.stringify(lo);
+    if (key === this.loadoutKey) return;
+    this.loadoutKey = key;
+    this.avatar.setLoadout(lo);
+  }
+
+  /** A grenade of theirs: the throwing arm swings. */
+  throwGrenade() {
+    this.avatar.throwGrenade();
+  }
+
+  /** Hit by a bullet from `from`: the torso jerks. */
+  hitReact(from: THREE.Vector3) {
+    this.avatar.hitReact(from);
   }
 
   /** Approximate muzzle position (for tracers from their shots). */
@@ -173,7 +208,7 @@ export class RemotePlayer implements Target {
   }
 
   refineRegion(point: THREE.Vector3, region: HitRegion): HitRegion {
-    return refineRegion(point, region, this.position, this.yaw);
+    return this.rig.refineRegion(point, region);
   }
 
   isBehind(point: THREE.Vector3): boolean {
@@ -181,7 +216,7 @@ export class RemotePlayer implements Target {
   }
 
   dispose() {
-    this.world.removeRigidBody(this.body);
+    this.rig.dispose();
     this.scene.remove(this.avatar.root);
   }
 }
@@ -201,10 +236,21 @@ export class RemoteWorld {
   ) {}
 
   upsertInfo(p: PlayerInfo) {
-    this.info.set(p.id, p);
+    // The look only comes when the player appears: keep it across later updates.
+    const ap = p.ap ?? this.info.get(p.id)?.ap;
+    this.info.set(p.id, { ...p, ap });
     if (p.id === this.me) return;
     const rp = this.players.get(p.id);
-    if (!rp) this.players.set(p.id, new RemotePlayer(p.id, p.name, p.sex ?? 'm', this.world, this.scene, this.registry));
+    const sex = p.sex ?? 'm';
+    if (!rp) this.players.set(p.id, new RemotePlayer(p.id, p.name, sex, ap ?? defaultAppearance(sex), this.world, this.scene, this.registry));
+    this.players.get(p.id)?.setLoadout(p.lo ?? DEFAULT_LOADOUT);
+  }
+
+  /** A player equipped other weapon levels. */
+  setLoadout(id: number, lo: Loadout) {
+    const info = this.info.get(id);
+    if (info) info.lo = lo;
+    this.players.get(id)?.setLoadout(lo);
   }
 
   remove(id: number) {

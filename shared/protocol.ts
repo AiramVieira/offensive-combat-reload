@@ -4,6 +4,7 @@
 import type { HitRegion } from './weapons';
 import { HUMILIATION } from './constants';
 import type { Loadout, ProgWeapon } from './progression';
+import type { Appearance } from './appearance';
 import type { MapId } from './maps';
 
 export const NET = {
@@ -71,6 +72,8 @@ export interface PlayerInfo {
   sex: Sex;
   /** Equipped level of each weapon (for weapon names in the kill feed). */
   lo?: Loadout;
+  /** How the character looks (sent when the player appears: 'joined' and 'playerJoined'). */
+  ap?: Appearance;
   kills: number;
   deaths: number;
   score: number;
@@ -91,6 +94,8 @@ export interface CorpseInfo {
   victim: number;
   name: string;
   sex: Sex;
+  /** The body looks like the player did. */
+  ap?: Appearance;
   p: Vec3;
   yaw: number;
   /** Server time (ms) when the humiliation window closes. */
@@ -145,6 +150,8 @@ export type ServerMsg =
   | { t: 'taunt'; id: number; corpse: number }
   | { t: 'tauntEnd'; id: number; corpse: number; done: boolean; awards: Award[]; players: PlayerInfo[] }
   | { t: 'scores'; players: PlayerInfo[] }
+  /** A player changed their equipped weapon levels: everyone else sees the new models. */
+  | { t: 'playerLoadout'; id: number; lo: Loadout }
   | { t: 'prop'; id: string; by: number }
   | { t: 'pong'; c: number; s: number }
   /** The account's progress changed (points only come from the server online). */

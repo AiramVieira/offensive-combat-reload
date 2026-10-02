@@ -11,10 +11,17 @@ import { eyeHeight, type MoveInput } from '@shared/movement';
 import { CLOSE, FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
 import { startLoop } from './core/loop';
 import { Input } from './core/input';
+import { enterFullscreen, IS_MOBILE } from './core/device';
+import { TouchControls } from './ui/touch';
+import { gamepad } from './core/gamepad';
+import { PadNav } from './ui/padNav';
+import { AimAssist } from './gameplay/aimAssist';
 import { loadSettings, saveSettings } from './core/settings';
 import { createRenderContext } from './render/renderer';
 import { Effects } from './render/effects';
-import { Viewmodel } from './render/viewmodel';
+import { Viewmodel, VM_FEEL } from './render/viewmodel';
+import { ANIM } from './character/animator';
+import { TuningPanel } from './ui/tuning';
 import { QualityManager } from './render/quality';
 import { createPhysics } from './world/physics';
 import { buildBlockoutMap, type SpawnPoint } from './world/blockoutMap';
@@ -24,7 +31,8 @@ import { buildGltfMap } from './world/gltfMap';
 import { MapBuilder } from './world/mapBuilder';
 import { DummyManager, type Dummy, type HitResult } from './entities/dummy';
 import { LocalPlayer } from './entities/localPlayer';
-import { Avatar, LOCAL_COLORS } from './entities/avatar';
+import { Avatar } from './entities/avatar';
+import { bodyStats, defaultAppearance } from '@shared/appearance';
 import { Weapon } from './weapons/weapon';
 import { Melee, findMeleeTarget } from './weapons/melee';
 import { GrenadeProjectiles, GrenadeThrower } from './weapons/grenades';
@@ -35,8 +43,8 @@ import { RemoteWorld, type RemotePlayer } from './net/remote';
 import { NavMap } from './ai/navmesh';
 import { Bot, type Combatant } from './ai/bot';
 import { BotManager } from './ai/bots';
-import { CharacterRig } from './entities/rig';
-import { isBehind, refineRegion } from './entities/hitboxes';
+import { CharacterRig, type HitPose } from './entities/rig';
+import { isBehind } from './entities/hitboxes';
 import { Corpse } from './gameplay/corpse';
 import { Sfx } from './audio/sfx';
 import { Hud, type FeedIcon } from './ui/hud';
@@ -70,6 +78,9 @@ async function boot() {
   const mark = (name: string) => (boot[name] = Math.round(performance.now() - bootT0));
   const screens = new Screens();
   screens.setProgress(0.1);
+  // Controllers drive the menus from the start (home, editor), and the match once it begins.
+  new PadNav(gamepad);
+  gamepad.onDeviceChange = () => screens.showControls(gamepad);
 
   const physics = await createPhysics();
   mark('physics');
@@ -122,7 +133,15 @@ async function boot() {
   player.netControlled = !!online;
   if (online) player.respawnDelay = NET.respawnDelay + 0.3;
   if (botMode) player.respawnDelay = 5;
-  const avatar = new Avatar(ctx.scene, LOCAL_COLORS, choice.sex);
+  // The character from the profile (default look without an account) and what it does in the game: only
+  // the PCD mode (reload without a hand/arm, speed without a leg, no hitbox on the missing limb). Height and
+  // build are looks: the eye, the hitboxes and the health are the same for everyone (style guide).
+  const look = choice.account?.aparencia ?? defaultAppearance(choice.sex);
+  const body = bodyStats(look);
+  player.maxHealth = body.maxHealth;
+  player.health = body.maxHealth;
+  viewmodel.setBody(look, choice.sex);
+  const avatar = new Avatar(ctx.scene, look, choice.sex);
   const melee = new Melee(knifeData(progress.equipped('faca')));
   const grenadeData = GRENADES.granada_frag;
   const grenadeLvl = grenadeLevel(grenadeData, GRENADE_LEVEL);
@@ -133,6 +152,26 @@ async function boot() {
   const scoreboard = new Scoreboard();
   const input = new Input(ctx.renderer.domElement);
   sfx.setVolume(settings.volume);
+  // Phones and tablets: touch controls over the HUD; the pause button leaves to the menu.
+  const touch = IS_MOBILE ? new TouchControls(input, settings, document.getElementById('hud')!) : null;
+  gamepad.attach(input, settings);
+  input.padActive = gamepad.device === 'pad';
+  // Start on a controller resumes from the pause menu.
+  gamepad.onStart = () => {
+    if (!document.getElementById('menu')!.classList.contains('hidden')) document.getElementById('play-btn')!.click();
+  };
+  if (touch) touch.onPause = () => input.unlock();
+  // Phones: leaving the browser (home button, a call) pauses like Esc does on a computer.
+  if (IS_MOBILE) document.addEventListener('visibilitychange', () => document.hidden && input.unlock());
+  // The context prompt (humiliate a body) is tapped on phones.
+  if (IS_MOBILE) {
+    const prompt = document.getElementById('prompt')!;
+    prompt.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      input.press('taunt', true);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) prompt.addEventListener(ev, () => input.press('taunt', false));
+  }
 
   // Bots mode: a navmesh from the map's colliders, and hitboxes on the local player so bots can hit us.
   let bots: BotManager | null = null;
@@ -142,6 +181,7 @@ async function boot() {
   const playerTarget: Combatant & { yaw: number } = {
     id: me,
     sex: choice.sex,
+    look,
     get name() {
       return choice.name;
     },
@@ -158,10 +198,10 @@ async function boot() {
       return player.yaw;
     },
     eye: (out) => player.eye(1, out),
-    refineRegion: (pt, r) => refineRegion(pt, r, playerFeet(playerPos), player.yaw),
+    refineRegion: (pt, r) => playerRig?.refineRegion(pt, r) ?? r,
     isBehind: (pt) => isBehind(pt, playerFeet(playerPos), player.yaw),
   };
-  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry) : null;
+  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry, body.missing) : null;
   if (playerRig) player.mb.ignoreBody = playerRig.body;
 
   /** Everything that can currently be shot / stabbed / blown up. */
@@ -259,6 +299,7 @@ async function boot() {
       viewmodel.muzzleCameraSpace(muzzle).applyMatrix4(ctx.camera.matrixWorld);
       viewmodel.flash();
       viewmodel.kick();
+      gamepad.rumble(45, 0.1, 0.35);
       effects.flash(muzzle);
       sfx.gunshot();
       if (shotIndex % weapon.data.tracanteACada === 0) effects.tracer(muzzle, end);
@@ -343,6 +384,7 @@ async function boot() {
   const applyLoadout = () => {
     const r = levelInfo('rifle', progress.equipped('rifle'));
     weapon.setData(rifleData(r.nivel));
+    weapon.reloadMul = body.reloadMul;
     viewmodel.setRifle(r);
     hud.setWeaponName(r.nome);
     const k = levelInfo('faca', progress.equipped('faca'));
@@ -403,7 +445,7 @@ async function boot() {
     }
     // One-hit kill, as in the original.
     const dummy = target as Dummy;
-    const res = dummy.applyHit(melee.data.letal ? LETHAL_DAMAGE : 55, 'tronco', simTime, tmp, 'back');
+    const res = dummy.applyHit(melee.data.letal ? LETHAL_DAMAGE : 55, 'peito', simTime, tmp, 'back');
     if (res.damage <= 0) return;
     hud.hit(res.killed ? 'kill' : 'hit');
     if (res.killed) {
@@ -416,7 +458,7 @@ async function boot() {
   // --- Humiliation ----------------------------------------------------------------------------------
   const playerFeet = (out: THREE.Vector3, alpha = 1) => {
     player.eye(alpha, out);
-    out.y -= eyeHeight(player.move);
+    out.y -= eyeHeight(player.move) * player.eyeScale;
     return out;
   };
 
@@ -546,7 +588,7 @@ async function boot() {
       const dmg = clampExplosionDamage(grenadeLvl, explosionDamage(grenadeLvl, dist), d.health);
       if (dmg <= 0) continue;
       const away = new THREE.Vector3(p.x - center.x, 0, p.z - center.z).normalize();
-      const res = d.applyHit(dmg, 'tronco', simTime, away, 'back');
+      const res = d.applyHit(dmg, 'peito', simTime, away, 'back');
       if (res.damage <= 0) continue;
       anyHit = true;
       effects.burst('confetti', tmp.copy(p).setY(p.y + 1.1), UP, 6);
@@ -723,6 +765,7 @@ async function boot() {
       const rp = net.players.get(m.id);
       if (!rp) return;
       const from = rp.muzzle(new THREE.Vector3());
+      rp.fire();
       effects.tracer(from, new THREE.Vector3(...m.e));
       player.eye(1, eye);
       sfx.gunshot(Math.min(0.8, 10 / (eye.distanceTo(from) + 6)));
@@ -732,7 +775,10 @@ async function boot() {
       player.eye(1, eye);
       if (rp && rp.position.distanceTo(eye) < 12) sfx.knifeSwing();
     });
+    conn.on('playerLoadout', (m) => net.setLoadout(m.id, m.lo));
     conn.on('grenade', (m) => {
+      // The thrower's arm swings on their avatar.
+      if (!m.mine) net.players.get(m.owner)?.throwGrenade();
       if (m.mine) mines.place(m.id, m.owner, new THREE.Vector3(...m.p));
       else grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact });
     });
@@ -742,7 +788,11 @@ async function boot() {
       explosionFx(new THREE.Vector3(...m.p));
     });
     conn.on('damage', (m) => {
-      if (m.target !== me) return;
+      if (m.target !== me) {
+        // Someone else was hit: their torso jerks along the bullet's path.
+        if (m.from) net.players.get(m.target)?.hitReact(new THREE.Vector3(...m.from));
+        return;
+      }
       player.health = m.health;
       player.lastDamageAt = simTime;
       hud.damageFlash(m.amount);
@@ -806,20 +856,47 @@ async function boot() {
     saveSettings(s);
     sfx.setVolume(s.volume);
     if (s.quality !== quality.current) quality.set(s.quality);
+    touch?.layout();
   });
   screens.onPlay(() => {
     sfx.unlock();
     sfx.ui();
+    // Phones: fullscreen and landscape (needs this tap).
+    if (IS_MOBILE && settings.fullscreen) void enterFullscreen();
     void input.lock();
   });
+  if (touch) {
+    // The layout editor: the controls shown over the paused game, draggable.
+    screens.onEditLayout(
+      () => {
+        hud.show(true);
+        touch.setEditing(true);
+      },
+      () => {
+        touch.setEditing(false);
+        hud.show(false);
+        saveSettings(settings);
+      },
+      () => touch.resetLayout(),
+    );
+  }
   screens.onExit(t('exitToHome'), () => {
     conn?.close();
     location.reload();
   });
-  ctx.renderer.domElement.addEventListener('click', () => {
-    if (!input.locked) void input.lock();
-  });
+  // Desktop: clicking the game takes the mouse back (on phones the menu's button resumes).
+  if (!IS_MOBILE) {
+    ctx.renderer.domElement.addEventListener('click', () => {
+      // Playing on a controller leaves the cursor free: a click hands the game back to the mouse.
+      if (!input.locked || !document.pointerLockElement) {
+        input.padActive = false;
+        void input.lock();
+      }
+    });
+  }
   input.onLockChange = (locked) => {
+    document.documentElement.classList.toggle('playing', locked);
+    if (!locked) touch?.reset();
     if (locked) {
       screens.hideMenu();
       hud.show(true);
@@ -914,7 +991,6 @@ async function boot() {
         sfx.fuseBeep(1 - fuse / grenadeData.pavio);
       }
 
-      const axis = (a: boolean, b: boolean) => (a ? 1 : 0) - (b ? 1 : 0);
       const locked = taunt.active; // no moving, shooting or aiming while dancing
       let lunge: MoveInput['lunge'] = null;
       const wasLunging = lunging;
@@ -941,14 +1017,14 @@ async function boot() {
         }
       }
       const move: MoveInput = {
-        forward: locked ? 0 : axis(input.down('forward'), input.down('back')),
-        right: locked ? 0 : axis(input.down('right'), input.down('left')),
+        forward: locked ? 0 : input.axis('forward', 'back', input.move.forward),
+        right: locked ? 0 : input.axis('right', 'left', input.move.right),
         jump: !locked && (input.down('jump') || input.consume('jump')),
         crouch: !locked && input.down('crouch'),
         sprint: !locked && !melee.swinging && !fireIntent && input.down('sprint'),
         ads: !locked && !melee.swinging && !thrower.busy && input.down('ads'),
         yaw: player.yaw,
-        speedMul: weapon.data.movimento,
+        speedMul: weapon.data.movimento * body.speedMul,
         lunge,
       };
       const ev = player.fixedStep(dt, move, simTime);
@@ -1005,7 +1081,29 @@ async function boot() {
 
     for (const ex of grenades.fixedUpdate(dt)) explode(ex.position, ex.id);
     bots?.fixedUpdate(dt, simTime);
-    if (playerRig) playerRig.follow(playerFeet(feet), player.yaw, player.move.crouched, !player.dead);
+    if (playerRig) {
+      // The hitboxes take the pose the others see (crouch, aim, reload...).
+      const pose: HitPose = taunt.active
+        ? { kind: 'dance', t: taunt.t }
+        : {
+            kind: 'armed',
+            pose: {
+              speed: player.horizontalSpeed,
+              vel: { x: player.move.vel.x, z: player.move.vel.z },
+              yaw: player.yaw,
+              grounded: player.move.grounded,
+              sprint: player.move.sprinting,
+              crouch: player.move.crouched,
+              slide: player.move.sliding,
+              pitch: player.pitch,
+              ads: weapon.ads > 0.5,
+              reload: weapon.reloading,
+              knife: melee.swinging,
+              cook: thrower.cookT !== null,
+            },
+          };
+      playerRig.follow(playerFeet(feet), player.yaw, !player.dead, pose, dt);
+    }
     dummies.fixedUpdate(dt, simTime, (spot) => {
       const tr = player.mb.body.translation();
       return !player.dead && Math.hypot(tr.x - spot.x, tr.z - spot.z) < 0.9 && Math.abs(player.feet - spot.y) < 1.8;
@@ -1035,7 +1133,22 @@ async function boot() {
 
   // --- Render frame ---------------------------------------------------------------------------------
   let showDebug = false;
-  let showHitboxes = false;
+  // F4 cycles: characters' hitboxes → characters + map colliders (and the bots' navmesh) → off.
+  type DebugView = 'off' | 'chars' | 'all';
+  let debugView: DebugView = 'off';
+  const worldDebug = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
+  worldDebug.frustumCulled = false;
+  worldDebug.visible = false;
+  ctx.scene.add(worldDebug);
+  let worldDebugAge = Infinity;
+  /** Map colliders from Rapier's debug renderer (character hitboxes excluded: they have their own view). */
+  const refreshWorldDebug = () => {
+    const { vertices, colors } = physics.world.debugRender(undefined, (c) => ((c.collisionGroups() >>> 16) & GROUP.HITBOX) === 0);
+    worldDebug.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    worldDebug.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    worldDebug.geometry.computeBoundingSphere();
+    worldDebugAge = 0;
+  };
   let hudTimer = 0;
   let fpsAvg = 60;
   let sprintVis = 0;
@@ -1055,27 +1168,50 @@ async function boot() {
 
   let simMsAvg = 0;
   let renderMsAvg = 0;
+  const tuning = new TuningPanel({ 'Primeira pessoa (VM_FEEL)': VM_FEEL, 'Terceira pessoa (ANIM)': ANIM }, (section) => {
+    if (section.startsWith('Primeira')) viewmodel.retune();
+  });
+  // Aim assist (touch and controller, never the mouse; off by default): slows the look over an enemy and
+  // follows them while the player is aiming (gameplay/aimAssist.ts).
+  const aimAssist = new AimAssist();
+  let lastAimInput = 99;
   const render = (alpha: number, frameDt: number) => {
     const tRender = performance.now();
     renderTime += frameDt;
     const [mdx, mdy] = input.takeMouse();
     if (input.consume('debug')) showDebug = !showDebug;
+    // F6: live tuning of the first- and third-person feel. It stays open while playing (Esc frees the mouse
+    // to move the sliders; click the game to go back and feel the change).
+    if (input.consume('tuning')) tuning.toggle();
     if (input.consume('hitboxes')) {
-      showHitboxes = !showHitboxes;
-      dummies.setDebug(showHitboxes);
-      net?.setDebug(showHitboxes);
-      bots?.setDebug(showHitboxes);
+      debugView = debugView === 'off' ? 'chars' : debugView === 'chars' ? 'all' : 'off';
+      const chars = debugView !== 'off';
+      dummies.setDebug(chars);
+      net?.setDebug(chars);
+      bots?.setDebug(chars);
       const navDebug = (window as unknown as { __ocNavDebug?: THREE.Object3D }).__ocNavDebug;
-      if (navDebug) navDebug.visible = showHitboxes;
+      if (navDebug) navDebug.visible = debugView === 'all';
+      worldDebug.visible = debugView === 'all';
+      if (worldDebug.visible) refreshWorldDebug();
+      hud.notice(t(debugView === 'chars' ? 'debugViewChars' : debugView === 'all' ? 'debugViewAll' : 'debugViewOff'));
     }
+    // Moving colliders (doors, props) keep the overlay current, a few times per second.
+    if (worldDebug.visible && (worldDebugAge += frameDt) > 0.2) refreshWorldDebug();
 
     // Mouse look is applied per render frame for minimum latency; ADS scales by the zoom.
     if (input.locked && !player.dead && !taunt.active) {
       const zoomMul = 1 + (weapon.data.ads.zoom - 1) * weapon.ads;
       const adsMul = 1 + (settings.adsSensitivity - 1) * weapon.ads;
-      const k = settings.sensitivity * MOUSE_DEG_PER_COUNT * DEG * zoomMul * adsMul;
+      lastAimInput = mdx || mdy || input.move.forward || input.move.right || gamepad.sinceStick < 0.05 ? 0 : lastAimInput + frameDt;
+      const assist =
+        settings.aimAssist && gamepad.device !== 'mouse'
+          ? aimAssist.update(ctx.camera.position, player.yaw, player.pitch, targets(), frameDt, lastAimInput < 0.3)
+          : { slow: 1, dYaw: 0, dPitch: 0 };
+      const k = settings.sensitivity * MOUSE_DEG_PER_COUNT * DEG * zoomMul * adsMul * assist.slow;
       player.yaw -= mdx * k;
       player.pitch -= mdy * k * (settings.invertY ? -1 : 1);
+      player.yaw += assist.dYaw;
+      player.pitch += assist.dPitch;
       player.pitch = THREE.MathUtils.clamp(player.pitch, -89 * DEG, 89 * DEG);
     }
 
@@ -1180,6 +1316,8 @@ async function boot() {
       crouch: player.move.crouchT,
     });
 
+    // Animation LOD: far or off-screen characters pose less often.
+    Avatar.setCamera(ctx.camera);
     dummies.render(alpha, frameDt, simTime);
     bots?.render(alpha, frameDt);
     net?.render(frameDt);
@@ -1248,7 +1386,7 @@ async function boot() {
     hudTimer -= frameDt;
     if (hudTimer <= 0) {
       hudTimer = 1 / 15;
-      hud.setHealth(player.health);
+      hud.setHealth(player.health, player.maxHealth);
       hud.setAmmo(weapon.mag, weapon.reserve, weapon.data.pente, weapon.reloading);
       hud.setGrenades(thrower.count, grenadeData.quantidade);
       const mine = net?.info.get(me) ?? bots?.standings().find((p) => p.id === me);

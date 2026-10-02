@@ -1,6 +1,5 @@
 // Browser sessions: an opaque random value in an HttpOnly cookie; the database keeps only its SHA-256.
 // The server itself plays the BFF role: the browser never holds a token it could leak to scripts.
-import type { IncomingMessage } from 'node:http';
 import type { Db } from '../db';
 import { cookie, randomToken, readCookies, sha256, userAgent, clientIp } from '../http';
 import { REVOCATION_CHANNEL, type RedisClient } from '../redis';
@@ -24,7 +23,7 @@ export interface AuthSession {
 }
 
 /** Creates a session and returns its Set-Cookie header. */
-export async function createSession(db: Db, req: IncomingMessage, accountId: string): Promise<string> {
+export async function createSession(db: Db, req: Request, accountId: string): Promise<string> {
   const token = randomToken();
   await db.query(
     `INSERT INTO session (account_id, token_hash, device_label, ip, expires_at)
@@ -34,10 +33,10 @@ export async function createSession(db: Db, req: IncomingMessage, accountId: str
   return cookie(req, SESSION_COOKIE, token, TTL_SECONDS);
 }
 
-export const clearSessionCookie = (req: IncomingMessage) => cookie(req, SESSION_COOKIE, '', 0);
+export const clearSessionCookie = (req: Request) => cookie(req, SESSION_COOKIE, '', 0);
 
 /** The session behind the request's cookie, if valid (not revoked, not expired, account not deleted). */
-export async function authenticate(db: Db, req: IncomingMessage): Promise<AuthSession | null> {
+export async function authenticate(db: Db, req: Request): Promise<AuthSession | null> {
   const token = readCookies(req)[SESSION_COOKIE];
   if (!token || token.length > 100) return null;
   const { rows } = await db.query<{ id: string; account_id: string; last_used_at: Date }>(

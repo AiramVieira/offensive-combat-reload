@@ -1,83 +1,94 @@
-// Character hitboxes (section 6): simple shapes attached to a kinematic body, never the visual mesh.
-// Shared by training dummies and remote players so both are hit exactly the same way.
+// Character hitboxes (style guide, "Hitboxes"): 15 simple shapes attached to the bones, the same for every
+// body and never the visual mesh, so no clothes, hair or hat give an advantage or a disadvantage. Poses
+// change them (crouching, aiming, reloading move the bones), clothes never do. Shapes are given in the
+// bone's own space of the canonical rig (bones have no rotation at rest, so bone space = model axes).
+//
+// | Zone            | Shape                  | Bone               | Multiplier (weapon data) |
+// | head            | sphere, 12 cm × 1.12   | head               | 2.5× |
+// | neck            | short capsule          | neck               | 1.5× |
+// | chest           | horizontal capsule     | chest              | 1.0× |
+// | abdomen         | horizontal capsule     | spine              | 1.0× |
+// | hips            | horizontal capsule     | hips               | 0.9× |
+// | arms            | a capsule per segment  | upperArm, forearm  | 0.75× |
+// | hands           | small sphere           | hand               | 0.5× |
+// | thighs          | capsule                | thigh              | 0.75× |
+// | shins and feet  | capsule                | shin               | 0.6× |
 import * as THREE from 'three';
-import RAPIER from '@dimforge/rapier3d-compat';
-import { GROUP, groups } from '@shared/constants';
+import type { BodyStats } from '@shared/appearance';
 import type { HitRegion } from '@shared/weapons';
-import type { HitboxRegistry, Target } from '../gameplay/targets';
+import type { BoneName } from '../character/rig';
 
-const HITBOX_GROUPS = groups(GROUP.HITBOX, GROUP.BULLET);
-// Blocks players and bounces grenades; bullets use the hitboxes instead.
-const BLOCKER_GROUPS = groups(GROUP.BLOCKER, GROUP.PLAYER | GROUP.PROJECTILE);
-const UP = new THREE.Vector3(0, 1, 0);
+export type Missing = BodyStats['missing'];
 
-interface HitboxDef {
+export const NOTHING_MISSING: Missing = { armL: false, armR: false, handL: false, handR: false, legL: false, legR: false };
+
+/** One shape: a sphere (`a` only) or a capsule from `a` to `b`, in the bone's space. */
+export interface ZoneDef {
   region: HitRegion;
-  shape: 'ball' | 'capsule';
+  bone: BoneName;
   r: number;
-  half?: number;
-  pos: [number, number, number];
-  rotZ?: number;
+  a: readonly [number, number, number];
+  b?: readonly [number, number, number];
 }
 
-// Local space: origin at the feet, facing -Z.
-const HITBOXES: HitboxDef[] = [
-  { region: 'cabeca', shape: 'ball', r: 0.22, pos: [0, 1.62, 0] },
-  { region: 'tronco', shape: 'capsule', r: 0.26, half: 0.26, pos: [0, 1.1, 0] },
-  { region: 'bracos', shape: 'capsule', r: 0.085, half: 0.24, pos: [-0.4, 1.08, 0], rotZ: 0.12 },
-  { region: 'bracos', shape: 'capsule', r: 0.085, half: 0.24, pos: [0.4, 1.08, 0], rotZ: -0.12 },
-  { region: 'pernas', shape: 'capsule', r: 0.12, half: 0.28, pos: [-0.14, 0.42, 0] },
-  { region: 'pernas', shape: 'capsule', r: 0.12, half: 0.28, pos: [0.14, 0.42, 0] },
+/** The head is 10–15% bigger than the visual one: shots that graze it count (style guide). */
+const HEAD_GROW = 1.12;
+
+function zonesOfSide(s: -1 | 1): ZoneDef[] {
+  const n = s < 0 ? 'L' : 'R';
+  return [
+    { region: 'bracos', bone: `upperArm_${n}`, r: 0.058, a: [s * 0.03, -0.004, 0], b: [s * 0.27, 0, 0] },
+    { region: 'bracos', bone: `forearm_${n}`, r: 0.048, a: [s * 0.01, 0, 0], b: [s * 0.245, 0, 0] },
+    { region: 'maos', bone: `hand_${n}`, r: 0.065, a: [s * 0.085, -0.01, -0.01] },
+    { region: 'coxas', bone: `thigh_${n}`, r: 0.085, a: [0, -0.03, 0], b: [0, -0.4, -0.005] },
+    { region: 'canelas', bone: `shin_${n}`, r: 0.062, a: [0, -0.03, 0], b: [0, -0.4, -0.045] },
+  ];
+}
+
+/** The 15 shapes of a complete body. */
+export const ZONES: readonly ZoneDef[] = [
+  { region: 'cabeca', bone: 'head', r: 0.12 * HEAD_GROW, a: [0, 0.105, -0.01] },
+  { region: 'pescoco', bone: 'neck', r: 0.058, a: [0, 0, 0.005], b: [0, 0.06, -0.005] },
+  { region: 'peito', bone: 'chest', r: 0.125, a: [-0.085, 0.095, 0], b: [0.085, 0.095, 0] },
+  { region: 'abdomen', bone: 'spine', r: 0.115, a: [-0.065, 0.06, 0.005], b: [0.065, 0.06, 0.005] },
+  { region: 'quadril', bone: 'hips', r: 0.115, a: [-0.075, -0.02, 0.005], b: [0.075, -0.02, 0.005] },
+  ...zonesOfSide(-1),
+  ...zonesOfSide(1),
 ];
 
 /**
- * Groin zone, in local space (front half of the pelvis). It overlaps the lower torso and upper legs, so a
- * torso/leg hit whose point lands inside this box is reclassified as 'virilha' ("No pássaro!").
+ * The shapes of a body in PCD mode: a missing arm takes its arm and hand away, a missing hand only the hand,
+ * a missing leg leaves the stump of the thigh.
  */
-export const GROIN = { min: new THREE.Vector3(-0.13, 0.7, -0.35), max: new THREE.Vector3(0.13, 0.95, 0.02) };
-
-export interface CharacterColliders {
-  colliders: RAPIER.Collider[];
-  debug: THREE.Group;
-}
-
-/** Creates hitbox + movement-blocker colliders on `body` and registers them for `entity`. */
-export function createCharacterColliders(world: RAPIER.World, body: RAPIER.RigidBody, entity: Target, registry: HitboxRegistry): CharacterColliders {
-  const colliders: RAPIER.Collider[] = [];
-  const debug = new THREE.Group();
-  const debugMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true });
-  for (const h of HITBOXES) {
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, h.rotZ ?? 0));
-    const desc = (h.shape === 'ball' ? RAPIER.ColliderDesc.ball(h.r) : RAPIER.ColliderDesc.capsule(h.half!, h.r))
-      .setTranslation(...h.pos)
-      .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
-      .setCollisionGroups(HITBOX_GROUPS);
-    const col = world.createCollider(desc, body);
-    registry.set(col.handle, { entity, region: h.region });
-    colliders.push(col);
-    const dm = new THREE.Mesh(h.shape === 'ball' ? new THREE.SphereGeometry(h.r, 10, 8) : new THREE.CapsuleGeometry(h.r, h.half! * 2, 4, 8), debugMat);
-    dm.position.set(...h.pos);
-    dm.quaternion.copy(q);
-    debug.add(dm);
+export function zonesFor(m: Missing): ZoneDef[] {
+  const out: ZoneDef[] = [];
+  for (const z of ZONES) {
+    const side = z.bone.endsWith('_L') ? 'L' : z.bone.endsWith('_R') ? 'R' : null;
+    if (!side) {
+      out.push(z);
+      continue;
+    }
+    const arm = side === 'L' ? m.armL : m.armR;
+    const hand = side === 'L' ? m.handL : m.handR;
+    const leg = side === 'L' ? m.legL : m.legR;
+    if (arm && (z.bone.startsWith('upperArm') || z.bone.startsWith('forearm'))) continue;
+    if (hand && z.bone.startsWith('hand')) continue;
+    if (leg && z.bone.startsWith('shin')) continue;
+    if (leg && z.bone.startsWith('thigh')) {
+      out.push({ ...z, b: [0, -0.13, 0] });
+      continue;
+    }
+    out.push(z);
   }
-  const groinSize = new THREE.Vector3().subVectors(GROIN.max, GROIN.min);
-  const groinDebug = new THREE.Mesh(new THREE.BoxGeometry(groinSize.x, groinSize.y, groinSize.z), new THREE.MeshBasicMaterial({ color: 0xffe14d, wireframe: true }));
-  groinDebug.position.addVectors(GROIN.min, GROIN.max).multiplyScalar(0.5);
-  debug.add(groinDebug);
-  // Movement blocker so players can't walk through each other (does not stop bullets).
-  colliders.push(world.createCollider(RAPIER.ColliderDesc.capsule(0.5, 0.35).setTranslation(0, 0.9, 0).setCollisionGroups(BLOCKER_GROUPS), body));
-  debug.visible = false;
-  return { colliders, debug };
+  return out;
 }
 
-const tmp = new THREE.Vector3();
-
-export function refineRegion(point: THREE.Vector3, region: HitRegion, feet: THREE.Vector3, yaw: number): HitRegion {
-  if (region !== 'tronco' && region !== 'pernas') return region;
-  const local = tmp.copy(point).sub(feet).applyAxisAngle(UP, -yaw);
-  const inside = local.x >= GROIN.min.x && local.x <= GROIN.max.x && local.y >= GROIN.min.y && local.y <= GROIN.max.y && local.z >= GROIN.min.z && local.z <= GROIN.max.z;
-  return inside ? 'virilha' : region;
-}
+/**
+ * Groin zone, in the hips bone's space (the front of the pelvis): a hips, abdomen or thigh hit that lands
+ * inside it is reclassified as 'virilha' ("No pássaro!"). It moves with the pose (crouching, sliding).
+ */
+export const GROIN = { min: new THREE.Vector3(-0.09, -0.17, -0.2), max: new THREE.Vector3(0.09, -0.03, 0.01) };
+export const GROIN_FROM: ReadonlySet<HitRegion> = new Set(['quadril', 'abdomen', 'coxas']);
 
 export function isBehind(point: THREE.Vector3, feet: THREE.Vector3, yaw: number): boolean {
   const fx = -Math.sin(yaw);

@@ -63,7 +63,8 @@ export function createRenderContext(container: HTMLElement): RenderContext {
 
   // Viewmodel lives in its own scene/camera so the gun never clips into walls (section 4).
   const vmScene = new THREE.Scene();
-  const vmCamera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.01, 10);
+  // Its own FOV (style guide: 60–70°), independent of the player's.
+  const vmCamera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.01, 10);
   vmScene.add(new THREE.HemisphereLight(0xe8f6ff, 0x5a6a48, 1.6));
   const vmSun = new THREE.DirectionalLight(0xfff1d6, 1.8);
   vmSun.position.set(-1, 2, 1.5);

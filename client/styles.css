@@ -1366,3 +1366,637 @@ input[type='range'] {
 .profile .sex-toggle {
   margin-top: 8px;
 }
+
+/* ---------- Character editor (profile, Create-a-Sim style) ---------- */
+.home-card.wide {
+  width: min(1100px, 100%);
+}
+.home-card.wide #home-profile {
+  max-height: none;
+  overflow: visible;
+}
+.wide-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px 16px;
+}
+.customizer {
+  display: grid;
+  grid-template-columns: minmax(260px, 400px) 1fr;
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .customizer {
+    grid-template-columns: 1fr;
+  }
+}
+.cz-stage {
+  position: sticky;
+  top: 0;
+}
+#cz-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 38%, #ffffff, #cfe8ff 70%, #b5d6f5);
+  cursor: grab;
+  touch-action: none;
+}
+#cz-canvas:active {
+  cursor: grabbing;
+}
+.cz-stage .hint {
+  margin: 6px 0 0;
+  text-align: center;
+  -webkit-text-stroke: 0;
+}
+.cz-effects {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+.cz-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+.cz-actions .small-btn {
+  padding: 6px 26px;
+}
+.cz-actions .link-btn {
+  margin-top: 0;
+}
+.cz-panel h3 {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 26px;
+  margin: 0 0 10px;
+}
+.cz-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 6px;
+}
+.cz-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 8px 12px;
+  font: 700 14px var(--body);
+  color: var(--ink);
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+}
+.cz-tabs button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  font: 800 11px var(--body);
+  line-height: 1.1;
+  color: var(--ink);
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.cz-tabs button[aria-selected='true'] {
+  background: var(--team-a);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--ink);
+}
+.cz-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.cz-content {
+  margin-top: 12px;
+  max-height: min(64vh, 620px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.cz-content h4 {
+  margin: 12px 0 6px;
+  font-weight: 900;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+.cz-content section:first-child h4,
+.cz-pcd-hint + section h4 {
+  margin-top: 0;
+}
+.cz-pcd-hint {
+  margin: 0 0 10px;
+  -webkit-text-stroke: 0;
+}
+.cz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+.cz-card {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+.cz-card:hover {
+  transform: translateY(-2px);
+}
+.cz-card[aria-pressed='true'] {
+  border-color: var(--team-a);
+  box-shadow: 0 0 0 3px var(--team-a);
+}
+.cz-thumb {
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 40%, #ffffff, #dcecfb);
+  overflow: hidden;
+}
+.cz-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cz-thumb img:not([src]) {
+  visibility: hidden;
+}
+.cz-label {
+  margin-top: 4px;
+  font: 800 12px var(--body);
+  color: var(--ink);
+  text-align: center;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+.swatch[aria-pressed='true'] {
+  outline: 3px solid var(--team-a);
+  outline-offset: 2px;
+}
+.customizer input[type='color'] {
+  width: 40px;
+  height: 32px;
+  padding: 0 2px;
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+.cz-anims {
+  margin-top: 8px;
+  justify-content: center;
+}
+.cz-anims button {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.cz-dev {
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* --- Phones and tablets (html.mobile, core/device.ts) --------------------------------------------------- */
+
+.mobile-only {
+  display: none;
+}
+.mobile .mobile-only {
+  display: block;
+}
+.mobile .desktop-only {
+  display: none !important;
+}
+.mobile #game,
+.mobile #hud {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.mobile body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Touch controls (ui/touch.ts): sizes and positions are set by the script. */
+#touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  touch-action: none;
+}
+.touch-look {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+.touch-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 42%;
+  height: 72%;
+  pointer-events: auto;
+}
+.touch-stick {
+  position: fixed;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  background: rgba(18, 20, 26, 0.2);
+  opacity: calc(var(--touch-opacity, 0.55) + 0.2);
+  pointer-events: none;
+}
+.touch-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%);
+}
+.touch-btn {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(18, 20, 26, 0.32);
+  color: rgba(255, 255, 255, 0.92);
+  opacity: var(--touch-opacity, 0.55);
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(2px);
+  transition: transform 0.06s, background 0.08s;
+}
+.touch-btn svg {
+  width: var(--icon, 24px);
+  height: var(--icon, 24px);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+.touch-btn.on {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: #fff;
+  opacity: 1;
+  transform: scale(0.94);
+}
+/* Fire: the main control, a thicker ring. */
+.touch-fire,
+.touch-fire2 {
+  border-width: 2.5px;
+  border-color: rgba(255, 255, 255, 0.75);
+}
+.touch-fire.on,
+.touch-fire2.on {
+  background: rgba(224, 72, 52, 0.45);
+}
+.touch-ads.on {
+  background: rgba(255, 190, 60, 0.4);
+}
+#touch.editing .touch-btn {
+  opacity: 1;
+  outline: 3px dashed #e6c23a;
+}
+#touch.editing .touch-look,
+#touch.editing .touch-stick-zone {
+  pointer-events: none;
+}
+#touch-edit-bar {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 14px;
+  font-weight: 800;
+}
+#touch-edit-bar .big-btn {
+  padding: 8px 18px;
+  font-size: 16px;
+}
+.touch-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+/* "Turn your phone": only during a match, in portrait. */
+#rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: #4b2a9a;
+  color: #f3efe6;
+  text-align: center;
+  font: 900 22px Nunito, system-ui, sans-serif;
+}
+#rotate .rotate-icon {
+  font-size: 64px;
+}
+@media (orientation: portrait) {
+  .mobile.playing #rotate {
+    display: flex;
+  }
+}
+
+/* The HUD on a phone: compact, and out of the stick (left) and the buttons (right). */
+.mobile #score {
+  top: 6px;
+  transform: translateX(-50%) scale(0.6);
+  transform-origin: top center;
+}
+.mobile #killfeed {
+  top: 44px;
+  right: 8px;
+  gap: 3px;
+}
+.mobile .feed-row {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+.mobile #health,
+.mobile #ammo {
+  bottom: 6px;
+  transform-origin: bottom center;
+}
+.mobile #health {
+  left: auto;
+  right: 50%;
+  margin-right: 8px;
+  transform: scale(0.55);
+  transform-origin: bottom right;
+}
+.mobile #ammo {
+  right: auto;
+  left: 50%;
+  margin-left: 8px;
+  min-width: 0;
+  transform: scale(0.55);
+  transform-origin: bottom left;
+}
+.mobile #prompt {
+  bottom: 74px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.mobile #scoreboard {
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+}
+
+/* The start/pause menu on a phone: compact, the touch settings right under the play button. */
+.mobile #menu {
+  padding: 6px;
+}
+.mobile .menu-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(820px, 100%);
+  max-height: calc(100vh - 12px);
+  padding: 8px 16px 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile .logo.small {
+  font-size: 24px;
+  -webkit-text-stroke: 1.5px var(--ink);
+  text-shadow: 3px 3px 0 var(--ink);
+  margin: 0;
+}
+.mobile #menu .subtitle {
+  margin: 2px 0 6px;
+  font-size: 13px;
+}
+.mobile #play-btn {
+  font-size: 24px;
+  padding: 6px 32px;
+}
+.mobile .menu-columns {
+  order: 2;
+  width: 100%;
+  text-align: left;
+}
+.mobile .arsenal {
+  order: 3;
+  width: 100%;
+}
+.mobile #menu-exit {
+  order: 4;
+}
+.mobile .gpu-warning {
+  font-size: 12px;
+}
+
+/* The character editor on a phone lying down (short screens): preview on the left at the screen's height,
+   icon-only tabs in one row, the item list scrolling beside it. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .customizer {
+    grid-template-columns: minmax(170px, 32vw) 1fr;
+    gap: 12px;
+  }
+  #cz-canvas {
+    aspect-ratio: auto;
+    height: max(140px, calc(100vh - 150px));
+  }
+  .cz-stage .hint,
+  .cz-dev {
+    display: none;
+  }
+  .cz-effects {
+    margin-top: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .cz-actions {
+    margin-top: 6px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cz-panel h3 {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  .cz-tabs {
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .cz-tabs button {
+    padding: 4px 2px;
+  }
+  .cz-tabs button span:not(.cz-icon) {
+    display: none;
+  }
+  .cz-search {
+    margin-top: 6px;
+    padding: 5px 10px;
+  }
+  .cz-content {
+    margin-top: 6px;
+    max-height: calc(100vh - 150px);
+  }
+  .home-card.wide {
+    padding: 10px 12px;
+  }
+}
+
+/* Minimal HUD on a phone (CoD Mobile style): no stickers, white text with a soft shadow, thin bars. */
+.mobile #score,
+.mobile #health,
+.mobile #ammo {
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.mobile #score {
+  transform: translateX(-50%);
+  gap: 14px;
+  padding: 0;
+  font-size: 11px;
+}
+.mobile #score b {
+  font-size: 15px;
+}
+.mobile #health {
+  transform: none;
+  bottom: 10px;
+  margin-right: 14px;
+  padding: 0;
+  gap: 6px;
+  font-size: 11px;
+}
+.mobile #health-bar {
+  width: 110px;
+  height: 6px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.25);
+}
+.mobile #health-num {
+  font-size: 16px;
+}
+.mobile #ammo {
+  transform: none;
+  bottom: 6px;
+  margin-left: 14px;
+  padding: 0;
+  text-align: left;
+}
+.mobile #ammo-mag {
+  font-size: 26px;
+}
+.mobile #weapon-name {
+  font-size: 9px;
+  opacity: 0.85;
+}
+.mobile .feed-row {
+  background: rgba(18, 20, 26, 0.45);
+  border: none;
+  box-shadow: none;
+}
+.mobile #health.low {
+  animation: none;
+}
+.mobile #health.low #health-num {
+  color: #ff6b5c;
+}
+.mobile #grenades {
+  right: auto;
+  left: 0;
+  top: -16px;
+  gap: 4px;
+}
+.mobile #grenades i {
+  width: 8px;
+  height: 10px;
+  border-width: 1.5px;
+  border-color: #fff;
+}
+.mobile .death-card {
+  background: rgba(18, 20, 26, 0.55);
+  border: none;
+  box-shadow: none;
+  color: #fff;
+  padding: 10px 20px;
+}
+.mobile #death-msg {
+  font-size: 18px;
+}
+.mobile #death-timer {
+  font-size: 13px;
+}
+
+/* --- Controllers (core/gamepad.ts, ui/padNav.ts) ------------------------------------------------------- */
+.pad-only,
+.assist-only {
+  display: none;
+}
+.has-pad .pad-only,
+.mobile .assist-only,
+.has-pad .assist-only {
+  display: block;
+}
+.assist-only.check {
+  display: none;
+}
+.mobile .assist-only.check,
+.has-pad .assist-only.check {
+  display: grid;
+}
+/* The control the controller is on. */
+.pad-focus {
+  outline: 4px solid #e6c23a !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(230, 194, 58, 0.35) !important;
+}
+/* Playing on a controller: no cursor over the game, no touch buttons. */
+.pad-active.playing canvas {
+  cursor: none;
+}
+.pad-active #touch {
+  display: none;
+}

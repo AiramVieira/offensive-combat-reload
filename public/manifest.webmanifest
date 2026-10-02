@@ -1,0 +1,10 @@
+{
+  "name": "Offensive Combat",
+  "short_name": "Offensive",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#4b2a9a",
+  "theme_color": "#4b2a9a",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

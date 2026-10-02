@@ -1,6 +1,6 @@
 // Accounts over HTTP: sign-up, sign-in, limits and lockout, sessions, origin check, password reset,
 // names and deletion.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { GameServer } from '../app';
 import { outbox } from '../email';
 import { anonymizeExpired } from '../accounts';

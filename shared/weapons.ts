@@ -3,8 +3,13 @@ import riflePadrao from './data/weapons/rifle_padrao.json';
 import faca from './data/weapons/faca.json';
 import granadaFrag from './data/weapons/granada_frag.json';
 
-/** 'virilha' is the groin zone: any hit there is an instant kill ("No pássaro!"). */
-export type HitRegion = 'cabeca' | 'tronco' | 'bracos' | 'pernas' | 'virilha';
+/**
+ * Hit zones (style guide, "Hitboxes"): 15 shapes on the bones, the same for every body, grouped in 9 zones
+ * with their own damage multiplier. 'virilha' is the groin zone: any hit there is an instant kill
+ * ("No pássaro!").
+ */
+export const HIT_REGIONS = ['cabeca', 'pescoco', 'peito', 'abdomen', 'quadril', 'bracos', 'maos', 'coxas', 'canelas', 'virilha'] as const;
+export type HitRegion = (typeof HIT_REGIONS)[number];
 export type BodyRegion = Exclude<HitRegion, 'virilha'>;
 
 /** Regions that kill instantly regardless of weapon damage. */

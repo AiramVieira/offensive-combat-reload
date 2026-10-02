@@ -1,29 +1,21 @@
-// Target dummies for the offline prototype. Hitboxes are simple shapes attached to the body (section 6):
-// sphere for the head, capsules for torso and limbs, never the visual mesh. After dying, the corpse stays
-// "humiliable" for a few seconds with a countdown above it (section 8).
+// Target dummies for the offline prototype: standard characters (a varied look each, rifle in hand) with the
+// same hitboxes as every player (entities/rig.ts: 15 shapes on the bones, never the visual mesh), so
+// practice matches a real fight. After dying, the corpse stays "humiliable" for a few seconds with a
+// countdown above it (section 8).
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { randomAppearance } from '@shared/appearance';
 import { HEALTH, HUMILIATION } from '@shared/constants';
 import type { HitRegion } from '@shared/weapons';
-import { mergeColoredParts, PALETTE, toonGradient } from '../render/materials';
 import type { DummySpot } from '../world/blockoutMap';
 import type { HitboxRegistry, Humiliable, Target } from '../gameplay/targets';
 import { CorpseTimer } from '../ui/corpseTimer';
-import { createCharacterColliders, isBehind, refineRegion } from './hitboxes';
+import { Avatar } from './avatar';
+import { isBehind } from './hitboxes';
+import { CharacterRig, type HitPose } from './rig';
 const FALL_TIME = 0.45;
 const SINK_TIME = 0.8;
 const UP = new THREE.Vector3(0, 1, 0);
-
-// Decal geometry/materials shared by all dummies (created on first use).
-let shared: { targetGeo: THREE.BufferGeometry; targetMat: THREE.Material; faceGeo: THREE.BufferGeometry; faceMat: THREE.Material } | null = null;
-function sharedDecals() {
-  return (shared ??= {
-    targetGeo: new THREE.CircleGeometry(0.15, 24),
-    targetMat: new THREE.MeshBasicMaterial({ map: decalTexture('target') }),
-    faceGeo: new THREE.PlaneGeometry(0.34, 0.34),
-    faceMat: new THREE.MeshBasicMaterial({ map: decalTexture('face'), transparent: true }),
-  });
-}
 
 const NAMES = ['Sr. Alvo', 'Zé Palha', 'Tio Estopa', 'Dona Mira', 'Boneco 404', 'Recruta Zero', 'Cabeça de Balde', 'Seu Madruga-lvo', 'Palhaço Tático', 'Primo Distante', 'Ex-Campeão', 'Cara do Tutorial'];
 
@@ -45,10 +37,10 @@ export class Dummy implements Target, Humiliable {
 
   readonly group = new THREE.Group();
   private visual = new THREE.Group();
-  private body: RAPIER.RigidBody;
-  private colliders: RAPIER.Collider[];
-  private debugMeshes: THREE.Group;
-  private material!: THREE.MeshToonMaterial;
+  private rig: CharacterRig;
+  private avatar!: Avatar;
+  /** Its own copy of the baked material, so a hit flashes this dummy only. */
+  private material!: THREE.MeshStandardMaterial;
   private plate: THREE.Sprite;
   private plateCtx: CanvasRenderingContext2D;
   private plateTex: THREE.CanvasTexture;
@@ -81,20 +73,11 @@ export class Dummy implements Target, Humiliable {
     this.curr.copy(this.base);
     this.prev.copy(this.base);
 
-    const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.yaw, 0));
-    this.body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased()
-        .setTranslation(this.base.x, this.base.y, this.base.z)
-        .setRotation({ x: rot.x, y: rot.y, z: rot.z, w: rot.w }),
-    );
+    this.rig = new CharacterRig(world, this, registry);
+    this.rig.follow(this.curr, spot.yaw, true, this.currentPose(), 0);
 
-    const cc = createCharacterColliders(world, this.body, this, registry);
-    this.colliders = cc.colliders;
-    this.debugMeshes = cc.debug;
-
-    this.buildVisual();
-    this.debugMeshes.visible = false;
-    this.group.add(this.visual, this.debugMeshes);
+    this.buildVisual(index);
+    this.group.add(this.visual, this.rig.debug);
     this.group.position.copy(this.base);
     this.group.rotation.y = spot.yaw;
 
@@ -109,46 +92,39 @@ export class Dummy implements Target, Humiliable {
     scene.add(this.group);
   }
 
-  private buildVisual() {
-    // Chunky proportions: slightly oversized head, big hands. Baked into one vertex-colored mesh
-    // (one draw call + one shadow pass per dummy).
-    const burlap = 0xd9b77e;
-    const shirt = PALETTE.teamB;
-    const pants = 0x34405a;
-    const boots = 0x2a2a2a;
-    const geo = mergeColoredParts([
-      { geo: new THREE.SphereGeometry(0.25, 16, 12), color: burlap, pos: [0, 1.63, 0] },
-      { geo: new THREE.CapsuleGeometry(0.26, 0.5, 4, 12), color: shirt, pos: [0, 1.1, 0], scale: [1.15, 1, 0.8] },
-      { geo: new THREE.CapsuleGeometry(0.085, 0.46, 4, 8), color: shirt, pos: [-0.4, 1.1, 0], rot: [0, 0, 0.12] },
-      { geo: new THREE.CapsuleGeometry(0.085, 0.46, 4, 8), color: shirt, pos: [0.4, 1.1, 0], rot: [0, 0, -0.12] },
-      { geo: new THREE.SphereGeometry(0.11, 10, 8), color: burlap, pos: [-0.45, 0.8, 0] },
-      { geo: new THREE.SphereGeometry(0.11, 10, 8), color: burlap, pos: [0.45, 0.8, 0] },
-      { geo: new THREE.CapsuleGeometry(0.12, 0.52, 4, 8), color: pants, pos: [-0.14, 0.44, 0] },
-      { geo: new THREE.CapsuleGeometry(0.12, 0.52, 4, 8), color: pants, pos: [0.14, 0.44, 0] },
-      { geo: new THREE.BoxGeometry(0.2, 0.1, 0.3), color: boots, pos: [-0.14, 0.05, -0.04] },
-      { geo: new THREE.BoxGeometry(0.2, 0.1, 0.3), color: boots, pos: [0.14, 0.05, -0.04] },
-      // Team stripe across the chest: always readable regardless of cosmetics (section 12).
-      { geo: new THREE.BoxGeometry(0.62, 0.07, 0.44), color: 0x9fd4ff, pos: [0, 1.3, 0] },
-      // Belt buckle marking the groin zone.
-      { geo: new THREE.BoxGeometry(0.12, 0.07, 0.04), color: 0xffd23f, pos: [0, 0.9, -0.22] },
-    ]);
-    this.material = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient() });
-    const mesh = new THREE.Mesh(geo, this.material);
-    mesh.castShadow = true;
-    this.visual.add(mesh);
+  /** A standard character with a varied look (seeded by the dummy's index), never missing a limb. */
+  private buildVisual(index: number) {
+    let seed = index * 9301 + 49297;
+    const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    const sex = index % 2 ? 'f' : 'm';
+    const look = randomAppearance(sex, rnd);
+    look.pcd = { braco: '', perna: '' };
+    this.avatar = new Avatar(this.visual, look, sex);
+    this.avatar.visible = true;
+    this.avatar.pose(0, this.armed());
+    this.avatar.root.traverse((o) => {
+      const mesh = o as THREE.SkinnedMesh;
+      if (!mesh.isSkinnedMesh || !mesh.visible || !(mesh.material as THREE.MeshStandardMaterial).vertexColors) return;
+      this.material = (mesh.material as THREE.MeshStandardMaterial).clone();
+      mesh.material = this.material;
+    });
+  }
 
-    const decals = sharedDecals();
-    const target = new THREE.Mesh(decals.targetGeo, decals.targetMat);
-    target.position.set(0, 1.08, -0.215);
-    target.rotation.y = Math.PI;
-    const face = new THREE.Mesh(decals.faceGeo, decals.faceMat);
-    face.position.set(0, 1.64, -0.235);
-    face.rotation.y = Math.PI;
-    this.visual.add(target, face);
+  private armed() {
+    const p = this.spot.patrol;
+    // Patrolling strafes along an axis (the derivative of the patrol's sine).
+    const v = p ? Math.cos(this.patrolT) * p.amplitude * p.speed : 0;
+    const vel = { x: p?.axis === 'x' ? v : 0, z: p?.axis === 'z' ? v : 0 };
+    return { speed: Math.abs(v), vel, yaw: this.spot.yaw, crouch: false, pitch: 0, ads: false, reload: false, knife: false, cook: false };
+  }
+
+  /** Standing guard with the rifle (walking when it patrols): the avatar plays it, the hitboxes follow it. */
+  private currentPose(): HitPose {
+    return { kind: 'armed', pose: this.armed() };
   }
 
   setDebug(show: boolean) {
-    this.debugMeshes.visible = show;
+    this.rig.setDebug(show);
   }
 
   get position() {
@@ -156,7 +132,7 @@ export class Dummy implements Target, Humiliable {
   }
 
   refineRegion(point: THREE.Vector3, region: HitRegion): HitRegion {
-    return refineRegion(point, region, this.curr, this.spot.yaw);
+    return this.rig.refineRegion(point, region);
   }
 
   /** True if `point` is behind this dummy (used for the backstab bonus). */
@@ -208,7 +184,8 @@ export class Dummy implements Target, Humiliable {
     this.humiliableUntil = time + HUMILIATION.window;
     this.respawnAt = this.humiliableUntil + SINK_TIME;
     this.deathStyle = style;
-    for (const c of this.colliders) c.setEnabled(false);
+    // No hitboxes from the same tick.
+    this.rig.follow(this.curr, this.spot.yaw, false, this.currentPose(), 0);
     // 'back' falls away from the attacker; 'forward' doubles over toward them.
     const localDir = shotDir.clone().applyAxisAngle(UP, -this.spot.yaw);
     const away = localDir.z < 0 ? -1 : 1;
@@ -265,8 +242,8 @@ export class Dummy implements Target, Humiliable {
       this.patrolT += dt * p.speed;
       this.curr.copy(this.base);
       this.curr[p.axis] += Math.sin(this.patrolT) * p.amplitude;
-      this.body.setNextKinematicTranslation({ x: this.curr.x, y: this.curr.y, z: this.curr.z });
     }
+    this.rig.follow(this.curr, this.spot.yaw, true, this.currentPose(), dt);
     // Same regen rule as players: full recovery 4 s after the last hit.
     if (this.health < HEALTH.max && time - this.lastDamageAt > HEALTH.regenDelay) {
       this.health = Math.min(HEALTH.max, this.health + HEALTH.regenPerSecond * dt);
@@ -279,7 +256,6 @@ export class Dummy implements Target, Humiliable {
     this.dead = false;
     this.health = HEALTH.max;
     this.firstHitAt = null;
-    for (const c of this.colliders) c.setEnabled(true);
     this.plate.visible = true;
     this.timer.hide();
     this.visual.scale.setScalar(0.01);
@@ -316,6 +292,7 @@ export class Dummy implements Target, Humiliable {
       this.visual.rotation.x = this.flinch;
       const s = this.visual.scale.x;
       if (s < 1) this.visual.scale.setScalar(Math.min(1, s + dt * 5));
+      this.avatar.pose(dt, this.armed());
     }
 
     this.flashT -= dt;
@@ -359,45 +336,4 @@ function makeSprite(w: number, h: number): [THREE.Sprite, CanvasRenderingContext
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false }));
   return [sprite, canvas.getContext('2d')!, tex];
-}
-
-function decalTexture(kind: 'target' | 'face'): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d')!;
-  if (kind === 'target') {
-    ['#ffffff', '#ff4a3d', '#ffffff', '#ff4a3d'].forEach((col, i) => {
-      g.fillStyle = col;
-      g.beginPath();
-      g.arc(64, 64, 64 - i * 16, 0, Math.PI * 2);
-      g.fill();
-    });
-  } else {
-    // Stitched X eyes and a crooked grin.
-    g.strokeStyle = '#3a2a1a';
-    g.lineWidth = 9;
-    g.lineCap = 'round';
-    for (const x of [38, 90]) {
-      g.beginPath();
-      g.moveTo(x - 12, 40);
-      g.lineTo(x + 12, 62);
-      g.moveTo(x + 12, 40);
-      g.lineTo(x - 12, 62);
-      g.stroke();
-    }
-    g.beginPath();
-    g.moveTo(32, 90);
-    g.quadraticCurveTo(64, 112, 98, 84);
-    g.stroke();
-    g.lineWidth = 4;
-    for (let x = 42; x <= 88; x += 12) {
-      g.beginPath();
-      g.moveTo(x, 90);
-      g.lineTo(x + 2, 104);
-      g.stroke();
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
 }

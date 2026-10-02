@@ -1,9 +1,10 @@
 // Test helpers: a real game server on a free port, and a tiny browser (cookie jar + Origin header +
 // its own IP through X-Forwarded-For, so per-IP limits don't leak between tests).
-import { WebSocket } from 'ws';
 import type { ServerMsg } from '@shared/protocol';
 import { startServer, type GameServer } from '../app';
 import { TEST_DATABASE_URL, TEST_REDIS_URL } from './env';
+
+const wsUrl = (game: GameServer, ticket: string) => `ws://127.0.0.1:${game.port}/ws?ticket=${encodeURIComponent(ticket)}`;
 
 export const startTestServer = () => startServer({ port: 0, host: '127.0.0.1', databaseUrl: TEST_DATABASE_URL, redisUrl: TEST_REDIS_URL, jobs: false });
 
@@ -74,8 +75,8 @@ export class Player {
   private waiters: { match: (m: ServerMsg) => boolean; resolve: (m: ServerMsg) => void }[] = [];
 
   private constructor(readonly ws: WebSocket) {
-    ws.on('message', (raw) => {
-      const m = JSON.parse(String(raw)) as ServerMsg;
+    ws.addEventListener('message', (ev) => {
+      const m = JSON.parse(String(ev.data)) as ServerMsg;
       this.msgs.push(m);
       for (const w of [...this.waiters]) {
         if (w.match(m)) {
@@ -84,17 +85,28 @@ export class Player {
         }
       }
     });
-    ws.on('close', (code) => (this.closed = { code }));
+    ws.addEventListener('close', (ev) => (this.closed = { code: ev.code }));
   }
 
   static connect(game: GameServer, ticket: string, origin = `http://127.0.0.1:${game.port}`): Promise<Player> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${game.port}/ws?ticket=${encodeURIComponent(ticket)}`, { headers: { origin } });
+      // Bun's WebSocket takes extra handshake headers; a browser sends Origin by itself.
+      const ws = new WebSocket(wsUrl(game, ticket), { headers: { origin } });
       const p = new Player(ws);
-      ws.once('open', () => resolve(p));
-      ws.once('unexpected-response', (_req, res) => reject(new Error(`recusado: ${res.statusCode}`)));
-      ws.once('error', reject);
+      ws.addEventListener('open', () => resolve(p), { once: true });
+      ws.addEventListener('close', (ev) => reject(new Error(`recusado: ${ev.code} ${ev.reason}`)), { once: true });
     });
+  }
+
+  /**
+   * HTTP status of a handshake the server refuses. A WebSocket never sees it (it only reports close code
+   * 1002), so this sends the upgrade request itself.
+   */
+  static async refusal(game: GameServer, ticket: string, origin = `http://127.0.0.1:${game.port}`): Promise<number> {
+    const res = await fetch(wsUrl(game, ticket).replace(/^ws:/, 'http:'), {
+      headers: { origin, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': btoa('offensive-combat') },
+    });
+    return res.status;
   }
 
   send(msg: object) {
@@ -124,10 +136,14 @@ export class Player {
     if (this.closed) return Promise.resolve(this.closed.code);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('conexão não fechou')), timeout);
-      this.ws.once('close', (code) => {
-        clearTimeout(timer);
-        resolve(code);
-      });
+      this.ws.addEventListener(
+        'close',
+        (ev) => {
+          clearTimeout(timer);
+          resolve(ev.code);
+        },
+        { once: true },
+      );
     });
   }
 

@@ -155,6 +155,7 @@ export class BotManager {
       dealt = before - left;
     } else {
       const bot = victim as Bot;
+      if (attacker !== bot) bot.hitReact(attacker.position);
       dealt = Math.min(bot.health, amount);
       bot.health -= dealt;
       bot.lastDamageAt = this.time;
@@ -187,7 +188,7 @@ export class BotManager {
     const p = victim.position;
     const yaw = victim instanceof Bot ? victim.yaw : (victim as Combatant & { yaw?: number }).yaw ?? 0;
     const corpse = new Corpse(
-      { id: this.nextCorpse++, victim: victim.id, name: victim.name, sex: victim.sex, p: [p.x, p.y, p.z], yaw, until: this.time + HUMILIATION.window },
+      { id: this.nextCorpse++, victim: victim.id, name: victim.name, sex: victim.sex, ap: victim.look, p: [p.x, p.y, p.z], yaw, until: this.time + HUMILIATION.window },
       this.o.player.id,
       this.o.scene,
       groundBelow(this.o.physics.world, [p.x, p.y, p.z]),
@@ -219,6 +220,7 @@ export class BotManager {
     const dir = applySpread(aim, spread, new THREE.Vector3());
     const { hit, through, keep, end } = traceShot(this.o.physics, this.o.registry, eye, dir, RIFLE.alcanceMaximo, bot.rig.body, RIFLE.penetracao);
     const muzzle = bot.muzzle(new THREE.Vector3());
+    bot.fired();
     const listener = this.o.listener();
     const dist = listener.distanceTo(muzzle);
     this.o.sfx.gunshot(Math.min(0.8, 10 / (dist + 6)));
@@ -268,7 +270,7 @@ export class BotManager {
         continue;
       }
       // Same regeneration rule as players.
-      if (b.health < 100 && time - b.lastDamageAt > 4) b.health = Math.min(100, b.health + 25 * dt);
+      if (b.health < b.bodyStats.maxHealth && time - b.lastDamageAt > 4) b.health = Math.min(b.bodyStats.maxHealth, b.health + 25 * dt);
       b.fixedUpdate(dt, this.world);
       if (b.position.y < -20) this.kill(b, null, { kind: 'void' });
     }

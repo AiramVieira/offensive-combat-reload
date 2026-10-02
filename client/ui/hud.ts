@@ -1,4 +1,6 @@
 // In-match HUD (section 5): DOM updated by direct reference, numbers throttled by the caller.
+import { IS_MOBILE } from '../core/device';
+import { gamepad } from '../core/gamepad';
 import { t } from './strings';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -61,12 +63,13 @@ export class Hud {
     this.weaponName.textContent = name;
   }
 
-  setHealth(h: number) {
+  /** `max`: the body's max health (150 for the heavy build), so the bar is full at full health. */
+  setHealth(h: number, max = 100) {
     const v = Math.ceil(h);
     if (v === this.lastHealth) return;
     this.lastHealth = v;
     this.healthNum.textContent = String(v);
-    this.healthFill.style.width = `${v}%`;
+    this.healthFill.style.width = `${Math.min(100, (v / max) * 100)}%`;
     this.healthBox.classList.toggle('low', v < 25);
     this.vignette.style.setProperty('--low', String(Math.max(0, (30 - v) / 30)));
   }
@@ -98,6 +101,9 @@ export class Hud {
   }
 
   hit(kind: HitKind) {
+    // Phones: a short buzz on a hit, a longer one on a kill (Android; iOS ignores it).
+    if (IS_MOBILE) navigator.vibrate?.(kind === 'kill' ? 40 : 12);
+    gamepad.rumble(kind === 'kill' ? 160 : 60, kind === 'kill' ? 0.5 : 0.15, 0.6);
     this.hitmarker.className = `show ${kind}`;
     // Restart the CSS animation.
     void this.hitmarker.offsetWidth;
@@ -188,7 +194,8 @@ export class Hud {
     if (id !== this.promptKey) {
       this.promptKey = id;
       this.prompt.classList.remove('hidden');
-      this.prompt.querySelector('kbd')!.textContent = key;
+      // Controller: its button; phones: the prompt itself is tapped.
+      this.prompt.querySelector('kbd')!.textContent = gamepad.device === 'pad' ? gamepad.glyph('y') : IS_MOBILE ? t('tapHint') : key;
       this.promptText.textContent = text;
     }
     this.promptFill.style.width = `${(frac * 100).toFixed(1)}%`;
@@ -212,6 +219,7 @@ export class Hud {
   }
 
   damageFlash(amount: number) {
+    gamepad.rumble(180, Math.min(1, 0.3 + amount / 50), 0.4);
     this.vignette.style.setProperty('--hit', String(Math.min(1, 0.3 + amount / 60)));
     this.vignette.classList.remove('flash');
     void this.vignette.offsetWidth;

@@ -1,118 +1,146 @@
-// Third-person character: the local player during humiliations, and every remote player online.
-// Built from primitives on pivot groups so poses are animated procedurally until real glTF clips exist.
+// Third-person character for the game: the local player during humiliations, remote players, bots, corpses
+// and the editor. A thin adapter over the modular Character system (client/character): it turns the
+// player's saved Appearance into a CharacterConfig, bakes the result for the game (a few draw calls per
+// character) and animates it procedurally (CharacterAnimator).
 import * as THREE from 'three';
+import { sanitizeFace, type Appearance, type ItemChoice } from '@shared/appearance';
+import { catalogItem, type Slot } from '@shared/catalog';
 import type { Sex } from '@shared/protocol';
-import { PALETTE, toon } from '../render/materials';
+import { bodyStats } from '@shared/appearance';
+import { DEFAULT_LOADOUT, type Loadout } from '@shared/progression';
+import { CharacterAnimator, type AvatarPose } from '../character/animator';
+import { Character, type CharacterConfig } from '../character/character';
+import { heldGrenade, heldKnife, heldRifle } from './heldWeapons';
 
-const HAIR = 0x3b2418;
+export type { AvatarPose };
 
-export interface AvatarColors {
-  shirt: number;
-  cap: number;
-  stripe: number;
+/**
+ * The saved look (Appearance, validated by the server) as a Character config: every item in its slot, its
+ * colors as '<slot>' (primary), '<slot>.secondary' and '<slot>.detail'.
+ */
+export function appearanceToConfig(look: Appearance, sex: Sex): CharacterConfig {
+  const items: CharacterConfig['items'] = { hair: look.cabelo.id, beard: look.barba || null, weapon_R: 'rifle', weapon_back: 'rifle_costas' };
+  const colors: Record<string, string> = { skin: look.pele, eyes: look.olhos, hair: look.cabelo.cor };
+  for (const [slot, c] of Object.entries(look.itens) as [Slot, ItemChoice][]) {
+    items[slot] = c.id;
+    const it = catalogItem(c.id);
+    it?.channels.forEach((ch, i) => {
+      const key = ch === 'P' ? slot : `${slot}.${ch === 'S' ? 'secondary' : 'detail'}`;
+      if (c.cores[i]) colors[key] = c.cores[i];
+    });
+  }
+  return {
+    v: 1,
+    sex,
+    items,
+    colors,
+    eyes: { style: look.olhosEstilo },
+    // Looks saved before the face's features have none: the defaults.
+    face: sanitizeFace(look.rosto),
+    build: { height: look.altura, build: look.biotipo },
+    pcd: { braco: look.pcd.braco, perna: look.pcd.perna },
+  };
 }
 
-export const LOCAL_COLORS: AvatarColors = { shirt: PALETTE.teamA, cap: PALETTE.teamB, stripe: 0xffc89a };
-/** Free-for-all: everybody else is red (section 9). */
-export const ENEMY_COLORS: AvatarColors = { shirt: 0xe0463c, cap: 0x2a2a30, stripe: 0xffb0a8 };
-
-export interface AvatarPose {
-  /** Horizontal speed (m/s), drives the walk cycle. */
-  speed: number;
-  crouch: boolean;
-  slide?: boolean;
-  /** View pitch (radians): the torso and rifle follow it. */
-  pitch: number;
-  ads: boolean;
-  reload: boolean;
-  knife: boolean;
-  cook: boolean;
-}
+/** Animation LOD (style guide): the camera the game renders with, and its frustum this frame. */
+const lodCam = { pos: new THREE.Vector3(), frustum: new THREE.Frustum(), active: false };
+const lodSphere = new THREE.Sphere(new THREE.Vector3(), 1.3);
+const lodM = new THREE.Matrix4();
 
 export class Avatar {
-  readonly root = new THREE.Group();
-  private body = new THREE.Group();
-  private hips = new THREE.Group();
-  private torso = new THREE.Group();
-  private head = new THREE.Group();
-  private armL = new THREE.Group();
-  private armR = new THREE.Group();
-  private legL = new THREE.Group();
-  private legR = new THREE.Group();
-  private rifleHands = new THREE.Group();
-  private rifleBack: THREE.Mesh;
-  private walkPhase = 0;
+  readonly character: Character;
+  readonly root: THREE.Group;
+  private animator: CharacterAnimator;
+  private lodFrame = 0;
+  private lodDt = 0;
+  /** The equipped levels' models in the hands (rifle in the hands and on the back, knife, grenade). */
+  private held: THREE.Object3D[] = [];
+  private knife: THREE.Object3D | null = null;
+  private grenade: THREE.Object3D | null = null;
 
-  constructor(scene: THREE.Scene, colors: AvatarColors = LOCAL_COLORS, readonly sex: Sex = 'm') {
-    const female = sex === 'f';
-    const skin = toon(PALETTE.skin);
-    const shirt = toon(colors.shirt);
-    const pants = toon(0x4a5a32);
-    const dark = toon(0x222226);
-    const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D, x = 0, y = 0, z = 0) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      parent.add(m);
-      return m;
-    };
+  /**
+   * The game's camera, once per frame: avatars past 30 m update their pose every 2 frames, past 60 m every
+   * 4, and not at all outside the view (style guide, animation LOD). Without it, every pose runs.
+   */
+  static setCamera(camera: THREE.Camera) {
+    camera.updateMatrixWorld();
+    lodCam.pos.setFromMatrixPosition(camera.matrixWorld);
+    lodCam.frustum.setFromProjectionMatrix(lodM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    lodCam.active = true;
+  }
 
-    this.root.add(this.body);
-    this.hips.position.y = 0.82;
-    this.body.add(this.hips);
+  /** The time to animate by now, or null to skip this frame (the skipped time is caught up later). */
+  private lod(dt: number): number | null {
+    if (!lodCam.active) return dt;
+    this.lodDt += dt;
+    lodSphere.center.copy(this.root.position).y += 0.9;
+    if (!lodCam.frustum.intersectsSphere(lodSphere)) return null;
+    const d = this.root.position.distanceTo(lodCam.pos);
+    const every = d > 60 ? 4 : d > 30 ? 2 : 1;
+    if (++this.lodFrame % every !== 0) return null;
+    const out = Math.min(0.25, this.lodDt);
+    this.lodDt = 0;
+    return out;
+  }
 
-    // Legs hang from hip pivots.
-    for (const [leg, x] of [[this.legL, -0.14], [this.legR, 0.14]] as const) {
-      leg.position.set(x, 0, 0);
-      mesh(new THREE.CapsuleGeometry(0.12, 0.5, 4, 8), pants, leg, 0, -0.38, 0);
-      mesh(new THREE.BoxGeometry(0.2, 0.1, 0.3), dark, leg, 0, -0.77, -0.04);
-      this.hips.add(leg);
-    }
-
-    this.torso.position.y = 0.05;
-    this.hips.add(this.torso);
-    mesh(new THREE.CapsuleGeometry(0.26, 0.48, 4, 12), shirt, this.torso, 0, 0.28, 0).scale.set(female ? 1.02 : 1.15, 1, 0.8);
-    mesh(new THREE.BoxGeometry(0.62, 0.07, 0.44), toon(colors.stripe), this.torso, 0, 0.48, 0); // team stripe
-    this.rifleBack = mesh(new THREE.BoxGeometry(0.14, 0.5, 0.08), dark, this.torso, 0.1, 0.35, 0.26);
-    this.rifleBack.rotation.z = 0.5;
-
-    // Arms hang from shoulder pivots.
-    const shoulder = female ? 0.33 : 0.36;
-    for (const [arm, x] of [[this.armL, -shoulder], [this.armR, shoulder]] as const) {
-      arm.position.set(x, 0.55, 0);
-      mesh(new THREE.CapsuleGeometry(0.085, 0.42, 4, 8), shirt, arm, 0, -0.25, 0);
-      mesh(new THREE.SphereGeometry(0.11, 10, 8), skin, arm, 0, -0.55, 0);
-      this.torso.add(arm);
-    }
-
-    // Rifle held in front of the chest (hidden while dancing, when it goes on the back).
-    this.rifleHands.position.set(0.08, 0.42, -0.36);
-    mesh(new THREE.BoxGeometry(0.07, 0.1, 0.62), dark, this.rifleHands);
-    mesh(new THREE.BoxGeometry(0.03, 0.03, 0.3), dark, this.rifleHands, 0, 0.02, -0.44);
-    mesh(new THREE.BoxGeometry(0.06, 0.16, 0.08), toon(0x6b5a45), this.rifleHands, 0, -0.1, -0.05);
-    this.torso.add(this.rifleHands);
-
-    // Head: skin, backwards cap and sunglasses (cosmetic slots from section 12).
-    this.head.position.y = 0.78;
-    this.torso.add(this.head);
-    mesh(new THREE.SphereGeometry(0.25, 16, 12), skin, this.head, 0, 0.02, 0);
-    mesh(new THREE.CylinderGeometry(0.255, 0.26, 0.14, 16), toon(colors.cap), this.head, 0, 0.16, 0);
-    mesh(new THREE.BoxGeometry(0.3, 0.03, 0.2), toon(colors.cap), this.head, 0, 0.1, 0.3);
-    mesh(new THREE.BoxGeometry(0.36, 0.08, 0.04), dark, this.head, 0, 0.05, -0.235);
-    if (female) {
-      // Hair out from under the cap: over the back and sides, locks framing the face, a ponytail through
-      // the cap's back opening with a scrunchie in the cap color, and lipstick.
-      const hair = toon(HAIR);
-      mesh(new THREE.SphereGeometry(0.262, 16, 12), hair, this.head, 0, 0, 0.05).scale.set(1.03, 0.95, 0.96);
-      for (const x of [-0.225, 0.225]) mesh(new THREE.CapsuleGeometry(0.05, 0.16, 3, 8), hair, this.head, x, -0.08, -0.07);
-      mesh(new THREE.TorusGeometry(0.06, 0.025, 6, 12), toon(colors.cap), this.head, 0, 0.02, 0.29).rotation.x = 0.4;
-      const tail = mesh(new THREE.CapsuleGeometry(0.075, 0.28, 4, 8), hair, this.head, 0, -0.14, 0.33);
-      tail.rotation.x = 0.45;
-      mesh(new THREE.BoxGeometry(0.09, 0.025, 0.02), toon(0xd9606e), this.head, 0, -0.11, -0.238);
-    }
-
+  constructor(
+    scene: THREE.Object3D,
+    readonly look: Appearance,
+    readonly sex: Sex = 'm',
+    /** Merge into one mesh (the game). The editor keeps it live to change it piece by piece. */
+    opts: { bake?: boolean } = {},
+  ) {
+    this.character = new Character(appearanceToConfig(look, sex));
+    this.root = this.character.root;
+    this.animator = new CharacterAnimator(this.character);
+    this.animator.idle();
+    if (opts.bake ?? true) this.character.bake();
+    this.setLoadout(DEFAULT_LOADOUT);
     this.root.visible = false;
     scene.add(this.root);
+  }
+
+  /**
+   * The weapons of a loadout (equipped levels): the rifle model replaces the generic one in the hands and on
+   * the back; the knife and the grenade wait in the hands, shown only while used. Other players see exactly
+   * what this player equipped.
+   */
+  setLoadout(lo: Loadout) {
+    for (const o of this.held) o.removeFromParent();
+    this.held = [];
+    for (const slot of ['weapon_R', 'weapon_back'] as const) {
+      for (const o of this.character.objectsOf(slot)) {
+        // The generic rifle stays as the holder (grip, PCD hand swap, visibility); it just isn't drawn.
+        o.traverse((m) => {
+          const mesh = m as THREE.Mesh;
+          if (mesh.isMesh) (mesh.material as THREE.Material).visible = false;
+        });
+        const rifle = heldRifle(lo);
+        o.add(rifle);
+        this.held.push(rifle);
+      }
+    }
+    const missing = bodyStats(this.look).missing;
+    const knifeHand = missing.handR || missing.armR ? 'hand_L' : 'hand_R';
+    const grenadeHand = missing.handL || missing.armL ? 'hand_R' : 'hand_L';
+    this.knife = heldKnife(lo);
+    this.knife.position.set(knifeHand === 'hand_R' ? 0.01 : -0.01, 0, 0);
+    this.character.sockets[knifeHand].add(this.knife);
+    this.grenade = heldGrenade();
+    this.grenade.position.set(grenadeHand === 'hand_L' ? 0.01 : -0.01, -0.03, 0);
+    this.character.sockets[grenadeHand].add(this.grenade);
+    this.held.push(this.knife, this.grenade);
+    this.showHeld(false, false);
+  }
+
+  private showHeld(knife: boolean, grenade: boolean) {
+    if (this.knife) this.knife.visible = knife;
+    if (this.grenade) this.grenade.visible = grenade;
+  }
+
+  /** A grenade thrown (the left arm swings it forward). */
+  throwGrenade() {
+    this.animator.throwGrenade();
   }
 
   set visible(v: boolean) {
@@ -123,102 +151,69 @@ export class Avatar {
     return this.root.visible;
   }
 
-  private resetBody() {
-    this.body.rotation.set(0, 0, 0);
-    this.body.position.set(0, 0, 0);
-    this.hips.rotation.set(0, 0, 0);
-    this.torso.rotation.set(0, 0, 0);
-    this.head.rotation.set(0, 0, 0);
+  /** Rifle in the hands (armed) or slung on the back. */
+  private rifle(inHands: boolean) {
+    for (const o of this.character.objectsOf('weapon_R')) o.visible = inHands;
+    for (const o of this.character.objectsOf('weapon_back')) o.visible = !inHands;
   }
 
-  /** Alive, armed: walk cycle, crouch, aim pitch, and quick action overrides (reload, knife, grenade). */
+  /** Alive, armed: locomotion, aim offset, rifle in both hands, action layers (reload, knife, grenade). */
   pose(dt: number, s: AvatarPose) {
-    this.resetBody();
-    this.rifleHands.visible = true;
-    this.rifleBack.visible = false;
-    const moving = s.speed > 0.4;
-    this.walkPhase += dt * (moving ? 3 + s.speed * 1.1 : 0);
-    const swing = moving ? Math.sin(this.walkPhase) * Math.min(0.7, 0.2 + s.speed * 0.08) : 0;
-    const crouch = s.crouch ? 1 : 0;
-    this.hips.position.y = 0.82 - crouch * 0.32 + (moving ? Math.abs(Math.cos(this.walkPhase)) * 0.04 : 0);
-    // Rigid legs: crouching swings them forward (sitting-ish) as the hips drop.
-    this.legL.rotation.x = swing + crouch * 0.9;
-    this.legR.rotation.x = -swing + crouch * 0.9;
-    this.torso.rotation.x = -crouch * 0.35 + s.pitch * 0.3;
-    this.head.rotation.x = s.pitch * 0.4;
-
-    if (s.slide) {
-      // Baseball slide: legs out in front, body leaning back, still aiming.
-      this.hips.position.y = 0.32;
-      this.legL.rotation.x = 1.35;
-      this.legR.rotation.x = 1.1;
-      this.torso.rotation.x = 0.45 + s.pitch * 0.3;
-    }
-
-    // Arms forward holding the rifle, aimed with the view pitch. (Euler XYZ: the Z swing happens in the
-    // hanging frame, then X lifts the arm forward; +X = forward/up for an arm hanging along -Y.)
-    const aim = 1.35 + s.pitch * 0.5 + (s.ads ? 0.1 : 0);
-    this.armR.rotation.set(aim, 0, -0.12);
-    this.armL.rotation.set(aim - 0.1, 0, 0.45);
-    this.rifleHands.rotation.x = s.pitch * 0.5;
-
-    if (s.reload) {
-      this.armL.rotation.set(0.6, 0, 0.2);
-      this.rifleHands.rotation.z = 0.5;
-    } else {
-      this.rifleHands.rotation.z = 0;
-    }
-    if (s.knife) this.armR.rotation.set(1.6, 0.5, -0.2);
-    if (s.cook) this.armL.rotation.set(2.6, 0, 0.2);
+    // Knife: the rifle goes on the back and the knife comes out in the hand.
+    this.rifle(!s.knife);
+    const step = this.lod(dt);
+    if (step !== null) this.animator.pose(step, s);
+    this.showHeld(s.knife, this.animator.grenadeInHand);
   }
 
-  /** "Dancinha da Vitória": raise the roof, spin, then disco pointing. `t` in seconds, 150 bpm. */
+  /** A shot (recoil on the next poses). */
+  fire() {
+    this.animator.fire();
+  }
+
+  /** Hit by a bullet coming from `from` (world): the torso jerks along its path. */
+  hitReact(from: THREE.Vector3) {
+    const dir = new THREE.Vector3().subVectors(this.root.position, from).setY(0);
+    if (dir.lengthSq() < 1e-6) return;
+    dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.root.rotation.y);
+    this.animator.hitReact(dir);
+  }
+
+  /** "Dancinha da Vitória". */
   dance(t: number) {
-    this.resetBody();
-    this.rifleHands.visible = false;
-    this.rifleBack.visible = true;
-    const beat = 0.4;
-    const b = t / beat;
-    const bounce = Math.abs(Math.sin(b * Math.PI));
-    this.hips.position.y = 0.76 + bounce * 0.1;
-    this.hips.rotation.z = Math.sin(b * Math.PI) * 0.14;
-    this.legL.rotation.x = Math.sin(b * Math.PI) * 0.35;
-    this.legR.rotation.x = -Math.sin(b * Math.PI) * 0.35;
-    this.torso.rotation.z = -this.hips.rotation.z * 1.4;
-    this.head.rotation.x = Math.sin(b * Math.PI * 2) * 0.15;
-    this.head.rotation.z = Math.sin(b * Math.PI) * 0.2;
-
-    if (t < 1.6) {
-      // Raise the roof: both hands pumping above the head.
-      const pump = Math.sin(b * Math.PI * 2) * 0.25;
-      this.armL.rotation.set(0, 0, -2.7 - pump);
-      this.armR.rotation.set(0, 0, 2.7 + pump);
-    } else if (t < 2.4) {
-      // Spin with arms out.
-      const s = (t - 1.6) / 0.8;
-      this.hips.rotation.y = THREE.MathUtils.smootherstep(s, 0, 1) * Math.PI * 2;
-      this.armL.rotation.set(0, 0, -1.5);
-      this.armR.rotation.set(0, 0, 1.5);
-    } else {
-      // Disco point: right arm to the sky, left to the floor, swapping every beat.
-      const up = Math.floor(b) % 2 === 0;
-      this.armR.rotation.set(0, 0, up ? 2.6 : 0.6);
-      this.armL.rotation.set(0, 0, up ? -0.6 : -2.6);
-    }
+    this.rifle(false);
+    this.showHeld(false, false);
+    this.animator.dance(t);
   }
 
-  /** Stiff cartoon fall onto the back (`dir` 1) or face (-1), `t` seconds after death. */
+  /** Stiff cartoon fall onto the back (`dir` 1) or face (-1). */
   die(t: number, dir: 1 | -1 = 1) {
-    this.resetBody();
-    this.rifleHands.visible = false;
-    this.rifleBack.visible = true;
-    this.hips.position.y = 0.82;
-    this.armL.rotation.set(0, 0, -0.5);
-    this.armR.rotation.set(0, 0, 0.5);
-    const k = Math.min(1, t / 0.45);
-    const after = t - 0.45;
-    const bounce = k < 1 ? k * k : 1 + Math.sin(after * 18) * Math.exp(-after * 7) * 0.06;
-    // Fall around the feet: positive X rotation tips the top toward +Z (backward for a -Z facing body).
-    this.body.rotation.x = dir * bounce * (Math.PI / 2 - 0.08);
+    this.rifle(false);
+    this.showHeld(false, false);
+    this.animator.die(t, dir);
   }
+
+  /** Standing still (profile preview); `rifle` shows it slung on the back. */
+  idle(rifle = true, t = 0) {
+    this.rifle(false);
+    this.showHeld(false, false);
+    for (const o of this.character.objectsOf('weapon_back')) o.visible = rifle;
+    this.animator.idle(t);
+  }
+
+  /** Unarmed walk or run (editor preview). */
+  walk(dt: number, speed: number) {
+    this.rifle(false);
+    this.showHeld(false, false);
+    for (const o of this.character.objectsOf('weapon_back')) o.visible = false;
+    this.animator.walk(dt, speed);
+  }
+
+  dispose() {
+    this.character.dispose();
+  }
+}
+
+export function disposeAvatar(a: Avatar) {
+  a.dispose();
 }

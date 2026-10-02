@@ -2,17 +2,38 @@
 
 Homenagem de mecânicas ao FPS de navegador da U4iA Games. Esta é a **Fase 1 do roadmap**: protótipo offline de tiro.
 
+Precisa só do [Bun](https://bun.com) 1.4 ou mais novo (o Node não é usado em nenhuma etapa):
+
 ```bash
-npm install
+bun install
 docker compose up -d banco redis   # PostgreSQL + Redis das contas (uma vez; ficam rodando)
-npm run dev:online   # servidor do jogo + Vite: http://localhost:5173
-npm run dev          # só o cliente (treino offline funciona sem servidor)
-npm test             # testes do servidor (usam o banco e o Redis acima)
-npm run build && npm start   # produção: jogo e servidor numa porta só, http://localhost:8787
+bun run dev:online   # servidor do jogo + Vite: http://localhost:5173
+bun run dev          # só o cliente (treino offline funciona sem servidor)
+bun test             # testes do servidor (usam o banco e o Redis acima)
+bun run typecheck    # TypeScript 7 (o compilador nativo, em Go)
+bun run build && bun start   # produção: jogo e servidor numa porta só, http://localhost:8787
 docker compose up -d --build # produção com nginx, banco e Redis: http://localhost:8080
 ```
 
+Para jogar com os colegas, `bun link` (uma vez, nesta pasta) cria o comando global **`offensive`**. De qualquer pasta, ele abre o Docker se estiver fechado, constrói e sobe tudo, espera o jogo responder e mostra os endereços para mandar (Radmin, Wi-Fi). Também tem `offensive parar`, `offensive logs`, `offensive status` e `offensive firewall`.
+
 Para **publicar e jogar com amigos** (Radmin VPN, túnel, roteador ou servidor alugado, com nginx), veja **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+## No celular
+
+O jogo detecta sozinho se está num **PC** (teclado e mouse) ou no **navegador de um celular/tablet** (toque) — `?mobile=1` ou `?mobile=0` na URL força um dos dois. No celular:
+- **Controles de toque** (no estilo do CoD Mobile, com ícones de linha minimalistas): arraste no lado esquerdo para andar (empurrando até a borda o personagem corre), arraste no lado direito para mirar, botão grande de tiro embaixo à direita (dá para arrastá-lo e mirar enquanto atira; há um segundo botão de tiro à esquerda) com o de mirar ao lado (tocar liga/desliga, ou segurar, nas configurações), pular e agachar no canto, recarregar, faca e granada (segure para preparar, solte para arremessar). Em cima: pausar, placar e tela cheia. A mira tem curva de resposta: arrastos lentos são precisos, rápidos viram mais. O HUD no celular é limpo (texto e barras finas, sem caixas) e o aparelho vibra de leve ao acertar (Android). O aviso de humilhar um corpo é tocado na própria caixa.
+- **Configurações** (menu de pausa): sensibilidade do toque, tamanho e opacidade dos botões, **Ajustar botões** (arraste cada botão para onde preferir), segurar para mirar, **assistência de mira** (desligada por padrão; ligada, a mira desacelera sobre um inimigo e acompanha o movimento dele enquanto você mira, sem puxar a mira de longe) e tela cheia ao jogar.
+- **Tela cheia**: ao tocar em Jogar o jogo entra em tela cheia e trava na horizontal (Android e iPad). No **iPhone**, o Safari não permite tela cheia em páginas: use **Compartilhar → Adicionar à Tela de Início**; aberto pelo ícone, o jogo já abre em tela cheia e na horizontal.
+- A partida é jogada com o celular **deitado**; em pé aparece "Gire o celular". Os gráficos começam leves (sem sombras) e melhoram sozinhos se o aparelho aguentar 60 FPS.
+
+## Controle (PS4, PS5, Xbox 360, Xbox One)
+
+Funciona no navegador do **PC** (USB ou Bluetooth) e do **celular** (Bluetooth: Chrome no Android, Safari no iPhone/iPad), pela Gamepad API — é só ligar o controle e apertar um botão. O jogo reconhece se é PlayStation ou Xbox e mostra os botões certos nos avisos e na ajuda.
+- **Na partida** (layout do CoD): L2/LT mira · R2/RT atira · L1/LB granada (segure para preparar) · R1/RB ou R3 faca · ✕/A pula · ◯/B agacha (tocar alterna; correndo, desliza) · □/X recarrega · △/Y humilhar · L3 corre · Options/Menu pausa · Touchpad/View placar. Analógico esquerdo anda, o direito mira (zona morta, curva de resposta e um giro mais rápido segurando no extremo). O controle vibra ao atirar, acertar e levar dano.
+- **Nos menus**: D-pad ou analógico move o foco, ✕/A confirma (seleções trocam de opção, controles deslizantes andam com ←/→), ◯/B volta, L1/R1 trocam de aba (editor de personagem), o analógico direito rola as listas. Start/Options volta ao jogo da pausa.
+- **Configurações**: sensibilidade do controle e **assistência de mira** (a mesma do celular: desligada por padrão; ligada, a mira desacelera sobre um inimigo e acompanha o movimento dele enquanto você mira, sem nunca puxar a mira de longe; nunca vale para o mouse).
+- No PC, jogar com controle não prende o mouse; um clique no jogo devolve o controle ao mouse. No celular, os botões de toque somem enquanto o controle está em uso e voltam ao tocar na tela.
 
 ## Jogar online
 
@@ -34,7 +55,30 @@ Para jogar online é preciso entrar numa conta, com **e-mail e senha** ou com o 
 - A sessão fica num cookie `HttpOnly` por 30 dias (renovados a cada uso); o navegador não guarda token nenhum. O WebSocket abre com um ticket de uso único válido por 30 s. A mesma conta só joga em um lugar por vez: entrar em outro derruba a conexão antiga.
 - Configuração de e-mail, Discord, backup e moderação: [docs/DEPLOY.md](docs/DEPLOY.md#5-contas-banco-e-mail-e-discord).
 
-**Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Node no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
+### Personalizar o personagem
+
+No **Perfil → Personalizar personagem** há um editor no estilo do "Criar um Sim": o boneco em 3D num palco (arraste para girar, role para aproximar), abas por categoria (Corpo, Rosto e cabelo, Camiseta, Parte de baixo, Sapatos, Acessórios, Modo PCD) e cada opção como uma miniatura renderizada do próprio personagem, nas cores atuais. A câmera aproxima da parte que está sendo editada. Online, cada jogador aparece como se personalizou, e o corpo caído também.
+
+Os personagens usam um **sistema modular** ([client/character/](client/character/)): um corpo base com esqueleto, roupas e cabelos que compartilham o mesmo esqueleto, e itens presos em sockets (chapéu, óculos, pulseira, rifle). O estilo é anime low poly esguio (cabeça com cerca de 1/6 da altura, sombra pintada quente), com rosto pintado (3 estilos de olho). Hoje as peças são geradas em código, já no formato de GLB exportado do Blender; trocar por modelos de verdade é registrar a `url` do GLB. No jogo, cada personagem é mesclado num único mesh (2 draw calls). Detalhes e guia do Blender: [docs/PERSONAGENS.md](docs/PERSONAGENS.md).
+
+- **Corpo:** altura (Pequeno, Médio, Alto), biotipo (Magro, Médio, Gordo) e cor da pele (8 tons ou qualquer cor).
+- **Rosto:** estilo dos olhos (redondos, amendoados, marcantes) e cor dos olhos.
+- **Cabelo:** 3 estilos masculinos (curto, topete, black power) e 3 femininos (rabo de cavalo, longo solto, coque), em qualquer cor.
+- **Roupas** (3 de cada, para todos, cada peça com a cor que quiser): camiseta (básica, regata, polo); calça (jeans, cargo, moletom), bermuda (praia, jeans, esportiva) ou saia (lápis, rodada, de pregas); sapatos (tênis, bota, chinelo); chapéu (boné, palha, gorro); óculos (escuros, redondos, aviador); pulseira (couro, miçangas, relógio). Chapéu, óculos e pulseira são opcionais.
+- **Modo PCD:** personagem sem o braço esquerdo ou direito, sem a mão esquerda ou direita, e/ou sem a perna esquerda ou direita. Aparece na terceira pessoa e também nas mãos da primeira pessoa: sem um braço, o rifle fica numa mão só; sem a mão direita, a faca vai para a esquerda; sem a esquerda, a granada vai para a direita.
+
+O que muda no jogo ([shared/appearance.ts](shared/appearance.ts), aplicado no cliente e no servidor):
+
+| Escolha | Efeito |
+| --- | --- |
+| Altura | O corpo, as hitboxes e a altura da visão escalam juntos: Pequeno 90% (visão a 1,49 m), Médio 100% (1,65 m), Alto 110% (1,81 m). Quem é alto vê mais longe por cima das coisas, mas é um alvo maior. |
+| Biotipo | Gordo: **150 de vida** e tronco 30% mais largo. Magro: tronco 15% mais estreito. |
+| Sem mão ou sem braço | A hitbox do braço some (ou encurta sem a mão); **recarrega 30% mais devagar**. |
+| Sem perna | Só fica a hitbox do cotoco; **anda 25% mais devagar**. |
+
+O editor mostra esses efeitos (vida, altura da visão, tamanho da hitbox, recarga e velocidade) enquanto você escolhe. O bloqueio de movimento (onde o personagem cabe) é igual para todos. Os bots ganham um visual aleatório, com os mesmos efeitos.
+
+**Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Bun no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
 
 **No jogo:** `Tab` mostra o placar (pontos, abates, mortes, opressões, ping) e `Esc` → "Sair para o início" volta para a home.
 
@@ -95,9 +139,9 @@ Se o jogo rodar a ~10 FPS, o navegador provavelmente está desenhando sem placa 
 ```
 shared/   movimento, constantes, dados de armas, progressão, nível da conta e protocolo (cliente e servidor)
 client/   core (loop, input), render, world (mapa, superfícies, glTF, física), entities, weapons, gameplay, audio, ui, net (API e WebSocket)
-server/   app (HTTP + WebSocket), api e auth/ (contas), accounts (SQL), session (partida), progress, migrations/, tests/
+server/   app (Bun.serve: HTTP + WebSocket), api e auth/ (contas), accounts (SQL), session (partida), progress, migrations/, tests/
 public/   textures/ (manifest.json), models/ e maps/ (.glb), basis/ (decodificador KTX2)
-tools/    gerador dos .glb de exemplo (npm run exemplos:glb) e console de moderação (npm run admin)
+tools/    gerador dos .glb de exemplo (bun run exemplos:glb) e console de moderação (bun run admin)
 docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, contas, e-mail e Discord
 ```
 
@@ -109,6 +153,7 @@ docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, con
 - O controlador do Rapier não se move se começar um passo dentro de outro colisor; o jogador é **empurrado para fora** de personagens sobrepostos, e bonecos só renascem com o lugar livre.
 - Agachar fica só no **C**. `Ctrl` foi deixado de fora porque `Ctrl+W` fecha a aba do navegador fora do modo tela cheia.
 - Os sons são sintetizados enquanto não houver arquivos de áudio; cada função corresponde a uma entrada futura do banco de sons.
+- O servidor roda no **Bun**: um único `Bun.serve` atende a API, os arquivos e o WebSocket nativo. Cada sessão é um tópico do pub/sub do Bun, então o snapshot de cada tick é serializado uma vez por sala, não uma vez por jogador. As senhas usam `Bun.password` (Argon2id, com os mesmos parâmetros dos hashes já gravados).
 
 ## Próximo passo (Fase 2)
 
