@@ -100,6 +100,7 @@ export class Dummy implements Target, Humiliable {
     const look = randomAppearance(sex, rnd);
     look.pcd = { braco: '', perna: '' };
     this.avatar = new Avatar(this.visual, look, sex);
+    this.avatar.followHitboxes(this.rig.animator);
     this.avatar.visible = true;
     this.avatar.pose(0, this.armed());
     this.avatar.root.traverse((o) => {

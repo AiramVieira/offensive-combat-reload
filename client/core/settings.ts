@@ -23,7 +23,10 @@ export interface Settings {
   touchLayout: Record<string, [number, number]>;
   /** Light aim assist on touch: the aim slows down over an enemy (never pulls). Off by default. */
   aimAssist: boolean;
-  /** Go fullscreen (and landscape) when starting to play on a phone. */
+  /**
+   * Go fullscreen when starting to play: landscape on a phone; on a computer, where the browser allows it,
+   * the game keeps Esc there (device.ts keepEscape), so the menu opens and closes exactly.
+   */
   fullscreen: boolean;
   /** Touch aim button: hold to aim (true) or tap to toggle (false, CoD Mobile's default). */
   adsHold: boolean;

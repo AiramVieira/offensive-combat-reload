@@ -1,11 +1,13 @@
 // Touch controls for phones and tablets, laid out like CoD Mobile: a floating stick on the left (pushed to the
 // edge it sprints), drag anywhere else to look, a big fire button bottom right with aim next to it (drag the
 // fire button to keep aiming while shooting; a second fire button on the left), jump and crouch in the corner,
-// reload, knife and grenade (hold to cook, let go to throw), and pause, scoreboard and fullscreen at the top.
-// Minimal line icons (white strokes on dark translucent circles). The look has a response curve: slow drags
-// are precise, fast flicks turn more. Everything feeds the same named actions as the keyboard
-// (core/input.ts), so the game code doesn't know which one it got. Button size, opacity and look speed come
-// from the settings; the layout editor lets the player drag the buttons where they like.
+// reload, knife and grenade (hold to cook, let go to throw), and pause, scoreboard, fullscreen and chat at the
+// top. Minimal line icons (white strokes on dark translucent circles). The buttons carry the state the thumb
+// needs: grenades left on the grenade button, a ring filling while reloading and a pulse when the magazine
+// runs low on the reload button. The look has a response curve: slow drags are precise, fast flicks turn
+// more. Everything feeds the same named actions as the keyboard (core/input.ts), so the game code doesn't
+// know which one it got. Button size, opacity and look speed come from the settings; the layout editor lets
+// the player drag the buttons where they like. Default positions keep clear of notches (safe areas).
 import type { Action, Input } from '../core/input';
 import type { Settings } from '../core/settings';
 import { CAN_FULLSCREEN, enterFullscreen, exitFullscreen, isFullscreen } from '../core/device';
@@ -29,6 +31,8 @@ interface ButtonDef {
   y: number;
   left?: boolean;
   top?: boolean;
+  /** In the top-left row: placed one after another, whichever of them this game has (`x` unused). */
+  row?: boolean;
   /** Diameter in units of the screen height. */
   size: number;
   /** Dragging on it also turns the view (fire). */
@@ -52,6 +56,8 @@ const ICONS: Record<string, string> = {
   pause: svg('<path d="M9 6v12M15 6v12"/>'),
   board: svg('<path d="M5 7h14M5 12h14M5 17h9"/>'),
   fs: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
+  // A speech bubble.
+  chat: svg('<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>'),
 };
 
 const BUTTONS: ButtonDef[] = [
@@ -65,11 +71,14 @@ const BUTTONS: ButtonDef[] = [
   { id: 'grenade', action: 'grenade', icon: 'grenade', label: 'touchGrenade', x: 0.38, y: 0.66, size: 0.12 },
   // Left hand: a second fire button above the stick.
   { id: 'fire2', action: 'fire', icon: 'fire', label: 'touchFire', x: 0.16, y: 0.62, size: 0.14, left: true, look: true },
-  // Top.
-  { id: 'pause', icon: 'pause', label: 'touchPause', x: 0.07, y: 0.07, size: 0.1, left: true, top: true },
-  { id: 'board', action: 'scoreboard', icon: 'board', label: 'touchBoard', x: 0.19, y: 0.07, size: 0.1, left: true, top: true },
-  { id: 'fs', icon: 'fs', label: 'touchFullscreen', x: 0.31, y: 0.07, size: 0.1, left: true, top: true },
+  // Top row. The scoreboard toggles (holding a button to read it doesn't work with a thumb busy aiming).
+  { id: 'pause', icon: 'pause', label: 'touchPause', x: 0, y: 0.07, size: 0.1, left: true, top: true, row: true },
+  { id: 'board', action: 'scoreboard', toggle: true, icon: 'board', label: 'touchBoard', x: 0, y: 0.07, size: 0.1, left: true, top: true, row: true },
+  { id: 'fs', icon: 'fs', label: 'touchFullscreen', x: 0, y: 0.07, size: 0.1, left: true, top: true, row: true },
+  { id: 'chat', icon: 'chat', label: 'touchChat', x: 0, y: 0.07, size: 0.1, left: true, top: true, row: true },
 ];
+/** Gap between the buttons of the top row, and from the screen's edge (screen heights). */
+const ROW_GAP = 0.02;
 
 /** The stick's travel radius (screen heights) and where it starts to sprint. */
 const STICK_R = 0.11;
@@ -84,7 +93,12 @@ export class TouchControls {
   private pointers = new Map<number, { kind: 'stick' | 'look' | 'button'; id?: string; x: number; y: number; ox?: number; oy?: number; t: number }>();
   private toggled = new Set<Action>();
   private editing = false;
+  /** Reads the safe-area insets (notches, rounded corners) the browser gives through CSS env(). */
+  private safeProbe = document.createElement('div');
+  private grenadeBadge = document.createElement('span');
+  private statusKey = '';
   onPause: () => void = () => {};
+  onChat: () => void = () => {};
 
   constructor(
     private input: Input,
@@ -111,6 +125,13 @@ export class TouchControls {
       this.buttons.set(b.id, el);
       el.addEventListener('pointerdown', (e) => this.down(e, 'button', b.id));
     }
+    this.grenadeBadge.className = 'touch-badge';
+    this.buttons.get('grenade')?.appendChild(this.grenadeBadge);
+    // Chat: online only (setChat).
+    this.buttons.get('chat')?.classList.add('hidden');
+    this.safeProbe.style.cssText =
+      'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+    document.body.appendChild(this.safeProbe);
     look.addEventListener('pointerdown', (e) => this.down(e, 'look'));
     zone.addEventListener('pointerdown', (e) => this.down(e, 'stick'));
     // Moves and releases are tracked on the window: a finger may slide off the element it started on.
@@ -122,18 +143,28 @@ export class TouchControls {
     window.addEventListener('resize', () => this.layout());
   }
 
-  /** Applies size, opacity and positions (the player's or the defaults). */
+  /** Applies size, opacity and positions (the player's, or the defaults inside the safe area). */
   layout() {
     const h = window.innerHeight;
     const w = window.innerWidth;
+    const cs = getComputedStyle(this.safeProbe);
+    const safe = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
     this.root.style.setProperty('--touch-opacity', String(this.settings.touchOpacity));
+    let rowX = ROW_GAP;
     for (const b of BUTTONS) {
       const el = this.buttons.get(b.id);
-      if (!el) continue;
-      const size = b.size * h * this.settings.touchScale;
+      if (!el || el.classList.contains('hidden')) continue;
+      const units = b.size * this.settings.touchScale;
+      const size = units * h;
+      // The top row packs whichever buttons are there (no fullscreen on iPhone, no chat offline).
+      let x = b.x;
+      if (b.row) {
+        x = rowX + units / 2;
+        rowX += units + ROW_GAP;
+      }
       const saved = this.settings.touchLayout[b.id];
-      const cx = saved ? saved[0] * w : b.left ? b.x * h : w - b.x * h;
-      const cy = saved ? saved[1] * h : b.top ? b.y * h : h - b.y * h;
+      const cx = saved ? saved[0] * w : b.left ? safe.l + x * h : w - safe.r - x * h;
+      const cy = saved ? saved[1] * h : b.top ? safe.t + b.y * h : h - safe.b - b.y * h;
       el.style.width = el.style.height = `${size}px`;
       el.style.setProperty('--icon', `${Math.round(size * 0.46)}px`);
       el.style.left = `${cx - size / 2}px`;
@@ -156,6 +187,30 @@ export class TouchControls {
     this.reset();
     this.editing = on;
     this.root.classList.toggle('editing', on);
+  }
+
+  /** The chat button: online only. */
+  setChat(on: boolean) {
+    this.buttons.get('chat')?.classList.toggle('hidden', !on);
+    this.layout();
+  }
+
+  /**
+   * What the buttons show (every frame; cheap when nothing changed): grenades left on the grenade button
+   * (dimmed at none), the reload progress as a ring on the reload button (`reload` 0..1, null when not
+   * reloading), and a pulse on it when the magazine runs low.
+   */
+  setStatus(grenades: number, reload: number | null, lowAmmo: boolean) {
+    const key = `${grenades}|${reload === null ? '' : reload.toFixed(2)}|${lowAmmo}`;
+    if (key === this.statusKey) return;
+    this.statusKey = key;
+    this.grenadeBadge.textContent = String(grenades);
+    this.buttons.get('grenade')?.classList.toggle('empty', grenades === 0);
+    const r = this.buttons.get('reload');
+    if (!r) return;
+    r.classList.toggle('reloading', reload !== null);
+    r.classList.toggle('low', lowAmmo && reload === null);
+    r.style.setProperty('--p', String(reload ?? 0));
   }
 
   /** Back to the default positions. */
@@ -248,6 +303,10 @@ export class TouchControls {
     }
     if (id === 'fs') {
       void (isFullscreen() ? exitFullscreen() : enterFullscreen());
+      return;
+    }
+    if (id === 'chat') {
+      this.onChat();
       return;
     }
     if (!b.action) return;

@@ -1,0 +1,69 @@
+name: CI
+
+# Roda só em pull requests cujo destino é a main.
+on:
+  pull_request:
+    branches: [main]
+
+# O workflow só precisa ler o código.
+permissions:
+  contents: read
+
+# Se chegar um push novo no mesmo PR, cancela a execução antiga.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Typecheck e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Containers que ficam rodando ao lado do job, como o docker-compose faz localmente.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: oc
+          POSTGRES_PASSWORD: oc
+          POSTGRES_DB: oc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oc -d oc"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      DATABASE_URL_TESTE: postgres://oc:oc@localhost:5432/oc_teste
+      REDIS_URL_TESTE: redis://localhost:6379/1
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+
+      # A versão vem do campo "packageManager" do package.json.
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck (cliente e servidor)
+        run: bun run typecheck
+
+      - name: Testes
+        run: bun test

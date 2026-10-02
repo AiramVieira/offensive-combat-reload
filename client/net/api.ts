@@ -29,7 +29,7 @@ export async function api<T = void>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    // Not JSON: the game server isn't behind this address (e.g. `npm run dev` without the server).
+    // Not JSON: the game server isn't behind this address (e.g. `bun run dev` without the server).
     if (!res.ok || res.headers.get('content-type')?.includes('text/html')) throw new ApiError(res.status, 'offline');
   }
   if (!res.ok) {

@@ -1,5 +1,5 @@
 // Loading screen (with rotating tips) and the start/pause menu with settings (section 5).
-import { CAN_FULLSCREEN, enterFullscreen, IS_IOS, IS_MOBILE, STANDALONE } from '../core/device';
+import { CAN_FULLSCREEN, CAN_KEEP_ESCAPE, enterFullscreen, IS_IOS, IS_MOBILE, STANDALONE } from '../core/device';
 import type { GamepadInput, PadButton } from '../core/gamepad';
 import type { Settings } from '../core/settings';
 import type { Quality } from '../render/quality';
@@ -32,6 +32,7 @@ export class Screens {
       ['keyMelee', '<kbd>F</kbd>'],
       ['keyGrenade', '<kbd>G</kbd>'],
       ['keyTaunt', '<kbd>E</kbd>'],
+      ['keyChat', '<kbd>Enter</kbd> / <kbd>T</kbd>'],
       ['keyPause', '<kbd>Esc</kbd>'],
     ];
     this.keyRows = rows;
@@ -227,6 +228,10 @@ export class Screens {
     check('set-aim-assist', 'aimAssist');
     check('set-ads-hold', 'adsHold');
     check('set-fullscreen', 'fullscreen');
+    // Computer: the same setting, where fullscreen lets the game keep Esc (device.ts CAN_KEEP_ESCAPE).
+    $('lbl-fullscreen-desktop').textContent = t('fullscreenDesktop');
+    if (CAN_KEEP_ESCAPE) check('set-fullscreen-desktop', 'fullscreen');
+    else $('fs-desktop').classList.add('hidden');
     const inv = $<HTMLInputElement>('set-invert');
     inv.checked = s.invertY;
     inv.addEventListener('change', () => {

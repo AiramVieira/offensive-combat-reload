@@ -1,20 +1,24 @@
 // Staff console (Resposta P27 do plano de autenticação). Talks to the same database and Redis as the
-// game server, so a ban also kicks the player out of a running match.
+// game server, so a ban also kicks the player out of a running match and a chat mute applies right away.
 //
-//   npm run admin -- banir "Nome#1234" "motivo" 7d        (7d, 12h, 30m ou permanente)
-//   npm run admin -- desbanir "Nome#1234"
-//   npm run admin -- papel "Nome#1234" moderador [--remover]
-//   npm run admin -- sancoes "Nome#1234"
+//   bun run admin banir "Nome#1234" "motivo" 7d        (7d, 12h, 30m ou permanente)
+//   bun run admin desbanir "Nome#1234"
+//   bun run admin silenciar "Nome#1234" "motivo" 1d    (só o chat: a pessoa continua jogando)
+//   bun run admin dessilenciar "Nome#1234"
+//   bun run admin papel "Nome#1234" moderador [--remover]
+//   bun run admin sancoes "Nome#1234"
 //
-// In Docker: docker compose exec jogo node build/admin.mjs banir "Nome#1234" "motivo" 7d
+// In Docker: docker compose exec jogo bun build/admin.js banir "Nome#1234" "motivo" 7d
 import { CONFIG } from '../server/config';
 import { createDb, migrate } from '../server/db';
-import { ban, ModerationError, sanctions, setRole, unban } from '../server/moderacao';
+import { ban, ModerationError, mute, sanctions, setRole, unban, unmute } from '../server/moderacao';
 import { createRedis } from '../server/redis';
 
 const USAGE = `Uso:
   admin banir <Nome#1234> <motivo> <7d|12h|30m|permanente>
   admin desbanir <Nome#1234>
+  admin silenciar <Nome#1234> <motivo> <7d|12h|30m|permanente>
+  admin dessilenciar <Nome#1234>
   admin papel <Nome#1234> <admin|moderador> [--remover]
   admin sancoes <Nome#1234>`;
 
@@ -39,6 +43,16 @@ async function main() {
       }
       case 'desbanir':
         console.log(`${await unban(deps, tag)} banimento(s) ativo(s) revogado(s) de ${tag}.`);
+        break;
+      case 'silenciar': {
+        const [reason, duration] = rest;
+        if (!reason || !duration) throw new ModerationError(USAGE);
+        const until = await mute(deps, tag, reason, duration);
+        console.log(`${tag} silenciado no chat ${until ? `até ${fmt(until)}` : 'permanentemente'}.`);
+        break;
+      }
+      case 'dessilenciar':
+        console.log(`${await unmute(deps, tag)} silêncio(s) ativo(s) revogado(s) de ${tag}.`);
         break;
       case 'papel': {
         const [role] = rest;

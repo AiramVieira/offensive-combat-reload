@@ -1,7 +1,5 @@
 // E-mail and password: sign-up, sign-in (with rate limits and lockout), and password reset by e-mail.
 // Wrong e-mail and wrong password give the same answer, and take about the same time.
-import type { IncomingMessage } from 'node:http';
-import { hash, verify } from '@node-rs/argon2';
 import { cleanName, validEmail, validName, validPassword } from '@shared/account';
 import { asSex } from '@shared/protocol';
 import { activeBan, audit, createAccount, findAccountByEmail, getAccount, type AuditInfo } from '../accounts';
@@ -21,18 +19,24 @@ export const LIMITS = {
   resetTtlSeconds: 86400,
 };
 
+/**
+ * Argon2id through Bun.password, with the parameters the stored hashes were made with (19 MiB, 2 passes,
+ * one lane: OWASP's minimum). Verifying reads them from the hash itself.
+ */
+const hash = (password: string) => Bun.password.hash(password, { algorithm: 'argon2id', memoryCost: 19456, timeCost: 2 });
+
 // A real hash to verify against when the e-mail doesn't exist, so both cases cost the same.
 let dummyHash: Promise<string> | null = null;
 
-const auditInfo = (req: IncomingMessage): AuditInfo => ({ ip: clientIp(req), userAgent: userAgent(req) });
+const auditInfo = (req: Request): AuditInfo => ({ ip: clientIp(req), userAgent: userAgent(req) });
 
-async function limitIp(deps: Deps, req: IncomingMessage, bucket: string) {
+async function limitIp(deps: Deps, req: Request, bucket: string) {
   if ((await hit(deps.redis, `rl:${bucket}:ip:${clientIp(req)}`, 60)) > LIMITS.perIpPerMinute) throw new HttpError(429, 'muitas_tentativas');
 }
 
 const emailOf = (raw: unknown) => String(raw ?? '').trim().toLowerCase();
 
-export async function register(deps: Deps, req: IncomingMessage, body: Record<string, unknown>): Promise<string> {
+export async function register(deps: Deps, req: Request, body: Record<string, unknown>): Promise<string> {
   await limitIp(deps, req, 'cadastro');
   const email = emailOf(body.email);
   const senha = String(body.senha ?? '');
@@ -46,7 +50,7 @@ export async function register(deps: Deps, req: IncomingMessage, body: Record<st
   return createSession(deps.db, req, accountId);
 }
 
-export async function login(deps: Deps, req: IncomingMessage, body: Record<string, unknown>): Promise<string> {
+export async function login(deps: Deps, req: Request, body: Record<string, unknown>): Promise<string> {
   await limitIp(deps, req, 'login');
   const email = emailOf(body.email);
   const senha = String(body.senha ?? '');
@@ -55,7 +59,7 @@ export async function login(deps: Deps, req: IncomingMessage, body: Record<strin
   const lockKey = account ? `rl:login:conta:${account.id}` : null;
   const locked = lockKey ? Number(await deps.redis.get(lockKey)) >= LIMITS.failuresToLock : false;
   dummyHash ??= hash('senha-que-nao-existe');
-  const ok = await verify(account?.password_hash ?? (await dummyHash), senha.slice(0, 1024)).catch(() => false);
+  const ok = await Bun.password.verify(senha.slice(0, 1024), account?.password_hash ?? (await dummyHash)).catch(() => false);
   if (!account || !account.password_hash || !ok || locked || account.status === 'deleted') {
     if (account && lockKey && !locked) {
       const n = await deps.redis.multi().incr(lockKey).expire(lockKey, LIMITS.lockSeconds).exec();
@@ -72,7 +76,7 @@ export async function login(deps: Deps, req: IncomingMessage, body: Record<strin
 }
 
 /** Always answers the same way, whether the e-mail exists or not. */
-export async function requestReset(deps: Deps, req: IncomingMessage, body: Record<string, unknown>) {
+export async function requestReset(deps: Deps, req: Request, body: Record<string, unknown>) {
   await limitIp(deps, req, 'recuperar');
   const email = emailOf(body.email);
   if (!validEmail(email)) return;
@@ -94,7 +98,7 @@ export async function requestReset(deps: Deps, req: IncomingMessage, body: Recor
   }
 }
 
-export async function resetPassword(deps: Deps, req: IncomingMessage, body: Record<string, unknown>) {
+export async function resetPassword(deps: Deps, req: Request, body: Record<string, unknown>) {
   const token = String(body.token ?? '');
   const senha = String(body.senha ?? '');
   if (!validPassword(senha)) throw new HttpError(400, 'senha_invalida');

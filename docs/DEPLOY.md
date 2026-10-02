@@ -3,7 +3,7 @@
 O jogo roda no navegador. Quem joga só precisa de um **endereço**. Quem hospeda roda duas peças:
 
 - **nginx**: entrega o jogo (HTML, JS, texturas, modelos) e repassa a API `/api` e o WebSocket `/ws`.
-- **servidor do jogo** (Node): contas, sessões, regras, vida, pontos.
+- **servidor do jogo** (Bun): contas, sessões, regras, vida, pontos.
 - **PostgreSQL** (contas, perfis, progresso, estatísticas) e **Redis** (limites de tentativas, tickets do WebSocket, links de recuperação de senha).
 
 No Docker as quatro peças sobem juntas. Contas, e-mail e Discord estão na [seção 5](#5-contas-banco-e-mail-e-discord).
@@ -14,7 +14,19 @@ O nginx não "abre" a sua máquina para a internet. Ele só organiza o acesso a 
 
 ## 1. Subir o pacote (Docker)
 
-Pré-requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/) aberto.
+Pré-requisito: [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado.
+
+**Num comando só:** rode `bun link` uma vez na pasta do projeto. Depois disso, `offensive`, de qualquer pasta, abre o Docker Desktop se estiver fechado, constrói e sobe as quatro peças, espera o jogo responder e lista os endereços para os amigos (localhost, Radmin, Wi-Fi):
+
+```bash
+offensive             # sobe tudo (sem bun link: bun run offensive)
+offensive status      # containers e endereços
+offensive logs        # acompanhar o servidor
+offensive firewall    # libera a porta no firewall do Windows (pede administrador)
+offensive parar       # desligar tudo
+```
+
+Os mesmos passos com o Docker Desktop já aberto, direto pelo docker compose:
 
 ```bash
 docker compose up -d --build        # constrói e sobe nginx + servidor → http://localhost:8080
@@ -27,7 +39,7 @@ docker compose down                 # desligar tudo
 - Só o nginx fica exposto. O servidor do jogo roda na rede interna do Docker. O banco e o Redis ficam presos a `127.0.0.1` (portas 5442 e 6392), para desenvolvimento e backup.
 - Os arquivos são: [Dockerfile](../Dockerfile), [docker-compose.yml](../docker-compose.yml) e [deploy/nginx/docker.conf](../deploy/nginx/docker.conf).
 
-**Sem Docker**, na própria máquina: `docker compose up -d banco redis` (ou um PostgreSQL 18 e um Redis seus, com `DATABASE_URL` e `REDIS_URL`) e depois `npm ci && npm run build && npm start`, que sobe jogo e servidor numa porta só (8787), sem nginx.
+**Sem Docker**, na própria máquina: `docker compose up -d banco redis` (ou um PostgreSQL 18 e um Redis seus, com `DATABASE_URL` e `REDIS_URL`) e depois `bun install --frozen-lockfile && bun run build && bun start`, que sobe jogo e servidor numa porta só (8787), sem nginx.
 
 ---
 
@@ -79,7 +91,7 @@ PORTA=80 docker compose up -d --build
 ```
 
 - Para ter **HTTPS com domínio**, aponte o domínio para o IP do servidor e coloque o certificado no nginx. Uma forma é usar o [deploy/nginx/offensive-combat.conf](../deploy/nginx/offensive-combat.conf) com `certbot --nginx`. Veja a opção sem Docker abaixo.
-- **Sem Docker:** instale Node 22+ e nginx; faça `npm ci && npm run build` em `/var/www/offensive-combat`; ative o serviço [deploy/offensive-combat.service](../deploy/offensive-combat.service) (servidor preso a `127.0.0.1:8787`); copie [deploy/nginx/offensive-combat.conf](../deploy/nginx/offensive-combat.conf) para `/etc/nginx/conf.d/`. Os comandos estão no topo de cada arquivo.
+- **Sem Docker:** instale o Bun 1.4+ e o nginx; faça `bun install --frozen-lockfile && bun run build` em `/var/www/offensive-combat`; ative o serviço [deploy/offensive-combat.service](../deploy/offensive-combat.service) (servidor preso a `127.0.0.1:8787`); copie [deploy/nginx/offensive-combat.conf](../deploy/nginx/offensive-combat.conf) para `/etc/nginx/conf.d/`. Os comandos estão no topo de cada arquivo.
 
 ---
 
@@ -141,15 +153,17 @@ docker compose exec -T banco psql -U oc oc < backup-oc.sql            # restaura
 
 `docker compose down` mantém o volume; `docker compose down -v` **apaga todas as contas**.
 
-**Moderação.** Banimentos e papéis de staff são feitos pelo console do servidor. O banimento derruba o jogador da partida na hora:
+**Moderação.** Banimentos, silêncios no chat e papéis de staff são feitos pelo console do servidor. O banimento derruba o jogador da partida na hora; o silêncio só cala o chat da sala (a pessoa continua jogando) e também vale na partida em andamento:
 
 ```bash
-docker compose exec jogo node build/admin.mjs banir "Nome#1234" "motivo" 7d     # 7d, 12h, 30m ou permanente
-docker compose exec jogo node build/admin.mjs desbanir "Nome#1234"
-docker compose exec jogo node build/admin.mjs papel "Nome#1234" moderador        # --remover para tirar
-docker compose exec jogo node build/admin.mjs sancoes "Nome#1234"
+docker compose exec jogo bun build/admin.js banir "Nome#1234" "motivo" 7d     # 7d, 12h, 30m ou permanente
+docker compose exec jogo bun build/admin.js desbanir "Nome#1234"
+docker compose exec jogo bun build/admin.js silenciar "Nome#1234" "motivo" 1d  # só o chat
+docker compose exec jogo bun build/admin.js dessilenciar "Nome#1234"
+docker compose exec jogo bun build/admin.js papel "Nome#1234" moderador        # --remover para tirar
+docker compose exec jogo bun build/admin.js sancoes "Nome#1234"
 ```
 
-Em desenvolvimento, os mesmos comandos são `npm run admin -- banir "Nome#1234" "motivo" 7d`.
+Em desenvolvimento, os mesmos comandos são `bun run admin banir "Nome#1234" "motivo" 7d`.
 
 **Exclusão de conta (LGPD).** O jogador pede no Perfil e tem 30 dias para desistir. Depois disso, o servidor apaga e-mail, senha, vínculos e sessões, troca o nome por "Jogador excluído" e mantém só estatísticas e histórico. Isso roda na partida do servidor e a cada 24 h.

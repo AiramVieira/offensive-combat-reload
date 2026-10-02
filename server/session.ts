@@ -8,7 +8,7 @@
 // Not yet (next netcode step, section 14): server-side movement simulation, rewinding hitboxes for lag
 // compensation, and interest culling. Movement is trusted; hits are validated against server positions
 // with a lag tolerance.
-import type { WebSocket } from 'ws';
+import type { ServerWebSocket } from 'bun';
 import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
 import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, HIT_REGIONS, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
 import { ACCOUNT_XP } from '@shared/accountLevel';
@@ -16,7 +16,7 @@ import { bodyStats } from '@shared/appearance';
 import type { MapId } from '@shared/maps';
 import { knifeData, levelInfo, rifleData, sanitizeLoadout, weaponOfKill, type Loadout } from '@shared/progression';
 import { accountLevelOf, addAccountXp, addTime, addWeaponXp, equip, equippedOf, progressMsg, type LevelUp, type LiveAccount } from './progress';
-import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
+import { NET, ONLINE_GRENADE_LEVEL, sanitizeChat, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
 
 const RIFLE = WEAPONS.rifle_padrao;
 const PEN_MIN_KEEP = minPenetrationKeep(RIFLE);
@@ -29,7 +29,7 @@ const CHEST = 1.1;
 const LAG_SLACK = 4;
 
 export interface Conn {
-  ws: WebSocket;
+  ws: ServerWebSocket<unknown>;
   id: number;
   name: string;
   sex: Sex;
@@ -62,6 +62,9 @@ interface SPlayer {
   lastStab: number;
   lastShotRelay: number;
   lastProp: number;
+  /** Chat token bucket (NET.chatBurst, one back every NET.chatEveryMs). */
+  chatTokens: number;
+  chatAt: number;
   grenades: Map<number, { thrownAt: number; fuse: number; impact: boolean; mine: boolean; origin: Vec3; speed: number }>;
   dance: { corpse: number; since: number } | null;
 }
@@ -82,8 +85,10 @@ export class Session {
   readonly players = new Map<number, SPlayer>();
   private corpses = new Map<number, Corpse>();
   private nextCorpse = 1;
-  private timer: NodeJS.Timeout;
+  private timer: Timer;
   private scoreTimer = 0;
+  /** Bun pub/sub topic every player of this session is subscribed to. */
+  private readonly topic: string;
 
   constructor(
     readonly id: string,
@@ -92,7 +97,10 @@ export class Session {
     readonly permanent: boolean,
     private now: () => number,
     private onChange: () => void,
+    /** server.publish: sends to every socket subscribed to the topic. */
+    private publish: (topic: string, data: string) => void,
   ) {
+    this.topic = `sessao:${id}`;
     this.timer = setInterval(() => this.tick(), 1000 / NET.tickRate);
   }
 
@@ -126,8 +134,13 @@ export class Session {
     };
   }
 
+  /** To everyone in the session, serialized once; `except` is the player whose action caused it. */
   private broadcast(msg: ServerMsg, except?: number) {
-    for (const p of this.players.values()) if (p.id !== except) p.conn.send(msg);
+    const data = JSON.stringify(msg);
+    // ws.publish reaches every subscriber but the socket itself. A closed socket was already unsubscribed.
+    const sender = except === undefined ? undefined : this.players.get(except)?.conn.ws;
+    if (sender?.readyState === WebSocket.OPEN) sender.publish(this.topic, data);
+    else this.publish(this.topic, data);
   }
 
   // --- Membership -------------------------------------------------------------------------------------
@@ -159,11 +172,14 @@ export class Session {
       lastStab: 0,
       lastShotRelay: 0,
       lastProp: 0,
+      chatTokens: NET.chatBurst,
+      chatAt: this.now(),
       grenades: new Map(),
       dance: null,
     };
     this.players.set(p.id, p);
     conn.session = this;
+    conn.ws.subscribe(this.topic);
     conn.send({
       t: 'joined',
       session: this.info,
@@ -181,6 +197,7 @@ export class Session {
     if (!p) return;
     this.players.delete(conn.id);
     conn.session = null;
+    conn.ws.unsubscribe(this.topic);
     for (const c of this.corpses.values()) if (c.claimedBy === p.id) c.claimedBy = null;
     this.broadcast({ t: 'playerLeft', id: p.id });
     this.onChange();
@@ -220,6 +237,18 @@ export class Session {
       case 'swing':
         if (p.alive) this.broadcast({ t: 'swing', id: p.id }, p.id);
         return;
+      case 'chat': {
+        const text = sanitizeChat(msg.text);
+        if (!text) return;
+        if (Date.now() < p.conn.account.chatMutedUntil) return conn.send({ t: 'chatRefused', reason: 'muted' });
+        p.chatTokens = Math.min(NET.chatBurst, p.chatTokens + (now - p.chatAt) / NET.chatEveryMs);
+        p.chatAt = now;
+        if (p.chatTokens < 1) return conn.send({ t: 'chatRefused', reason: 'slow' });
+        p.chatTokens--;
+        // The sender too: everyone sees the same, sanitized line.
+        this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
+        return;
+      }
       case 'hit':
         return this.onHit(p, msg.target, msg.region, msg.dist, msg.keep, now);
       case 'stab':

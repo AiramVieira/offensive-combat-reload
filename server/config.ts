@@ -1,5 +1,5 @@
 // Server settings from the environment. Defaults match `docker compose up -d banco redis` on this machine,
-// so `npm run dev:online` works with no .env file.
+// so `bun run dev:online` works with no .env file.
 const list = (v: string | undefined) =>
   (v ?? '')
     .split(',')

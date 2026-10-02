@@ -8,7 +8,8 @@
 //   both hands by IK (right hand on the grip, left under the handguard) for hip fire, ADS and sprint, and
 //   short additive layers on top: recoil on every shot, reload, knife, grenade, hit reaction, landing.
 // Also the unarmed idle and walk of the editor, the victory dance and the fall. Every "feel" number is in
-// ANIM. The hitbox skeleton (entities/rig.ts) runs the same animator, so hitboxes follow these poses.
+// ANIM. The hitbox skeleton (entities/rig.ts) runs the same animator on the simulation tick, and the visible
+// character takes its state (syncFrom) instead of keeping a clock of its own, so both play the same pose.
 import * as THREE from 'three';
 import { AssetRegistry } from './registry';
 import { SOCKETS } from './rig';
@@ -185,6 +186,35 @@ export class CharacterAnimator {
     handToRifleInv ??= rifleInHand().invert();
   }
 
+  /**
+   * Takes every time-driven value of `src` (stride phase, blends, turn in place, action timers, additive
+   * layers). Posing right after with dt 0 and the same AvatarPose gives exactly its pose, on this body's
+   * own proportions: the visible character plays the pose of its hitbox skeleton (entities/rig.ts) this way.
+   */
+  syncFrom(src: CharacterAnimator) {
+    this.phase = src.phase;
+    this.gait = src.gait;
+    this.legYaw = src.legYaw;
+    this.lastYaw = src.lastYaw;
+    this.turning = src.turning;
+    this.crouchT = src.crouchT;
+    this.slideT = src.slideT;
+    this.sprintT = src.sprintT;
+    this.adsT = src.adsT;
+    this.airT = src.airT;
+    this.land = src.land;
+    this.recoil = src.recoil;
+    this.hitX = src.hitX;
+    this.hitZ = src.hitZ;
+    this.reloadT = src.reloadT;
+    this.knifeT = src.knifeT;
+    this.knifeSwing = src.knifeSwing;
+    this.throwT = src.throwT;
+    this.grenadeInHand = src.grenadeInHand;
+    this.time = src.time;
+    this.lastIdleT = src.lastIdleT;
+  }
+
   // --- Events (additive layers) ------------------------------------------------------------------------
 
   /** A shot: the rifle kicks back and up, the chest a little. */
@@ -326,7 +356,8 @@ export class CharacterAnimator {
     this.sprintT = damp(this.sprintT, s.sprint ? 1 : 0, A.rate.sprint, dt);
     const wasAir = this.airT > 0.5;
     this.airT = damp(this.airT, grounded ? 0 : 1, A.rate.air, dt);
-    if (wasAir && grounded) this.land = 1;
+    // No time passing (a synced pose, syncFrom) lands nothing new.
+    if (wasAir && grounded && dt > 0) this.land = 1;
     this.land = damp(this.land, 0, A.land.decay, dt);
     const moving = speed > 0.35 && grounded && this.slideT < 0.5;
     this.gait = damp(this.gait, moving ? 1 : 0, A.rate.gait, dt);

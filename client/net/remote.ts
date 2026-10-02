@@ -82,6 +82,7 @@ export class RemotePlayer implements Target {
     this.plate.position.y *= body.visualScale;
     this.avatar.root.add(this.plate);
     this.rig = new CharacterRig(world, this, registry, body.missing);
+    this.avatar.followHitboxes(this.rig.animator);
     this.avatar.root.add(this.rig.debug);
     this.rig.follow(this.position, 0, false, { kind: 'idle', t: 0 }, 0);
   }

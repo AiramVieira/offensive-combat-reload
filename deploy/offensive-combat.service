@@ -1,6 +1,8 @@
 # systemd unit for the game server on a Linux machine without Docker (nginx in front, see
 # deploy/nginx/offensive-combat.conf). Assumes the project is at /var/www/offensive-combat and was built
-# there with `npm ci && npm run build`.
+# there with `bun install --frozen-lockfile && bun run build`. Bun for every user, in /usr/local/bin:
+#
+#   curl -fsSL https://bun.sh/install | sudo BUN_INSTALL=/usr/local bash
 #
 #   sudo cp deploy/offensive-combat.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now offensive-combat
@@ -12,7 +14,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/var/www/offensive-combat
-ExecStart=/usr/bin/node build/server.mjs
+ExecStart=/usr/local/bin/bun build/server.js
 Environment=NODE_ENV=production HOST=127.0.0.1 PORT=8787
 Restart=on-failure
 User=www-data
