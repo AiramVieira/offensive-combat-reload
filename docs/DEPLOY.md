@@ -153,11 +153,13 @@ docker compose exec -T banco psql -U oc oc < backup-oc.sql            # restaura
 
 `docker compose down` mantém o volume; `docker compose down -v` **apaga todas as contas**.
 
-**Moderação.** Banimentos e papéis de staff são feitos pelo console do servidor. O banimento derruba o jogador da partida na hora:
+**Moderação.** Banimentos, silêncios no chat e papéis de staff são feitos pelo console do servidor. O banimento derruba o jogador da partida na hora; o silêncio só cala o chat da sala (a pessoa continua jogando) e também vale na partida em andamento:
 
 ```bash
 docker compose exec jogo bun build/admin.js banir "Nome#1234" "motivo" 7d     # 7d, 12h, 30m ou permanente
 docker compose exec jogo bun build/admin.js desbanir "Nome#1234"
+docker compose exec jogo bun build/admin.js silenciar "Nome#1234" "motivo" 1d  # só o chat
+docker compose exec jogo bun build/admin.js dessilenciar "Nome#1234"
 docker compose exec jogo bun build/admin.js papel "Nome#1234" moderador        # --remover para tirar
 docker compose exec jogo bun build/admin.js sancoes "Nome#1234"
 ```

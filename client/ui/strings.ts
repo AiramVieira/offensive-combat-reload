@@ -5,6 +5,8 @@ const ptBR = {
   play: 'JOGAR',
   resume: 'VOLTAR AO JOGO',
   clickToResume: 'Clique para voltar ao jogo',
+  aimOnNextKey: 'A mira volta com a próxima tecla ou clique',
+  fullscreenDesktop: 'Tela cheia ao jogar (Esc abre e fecha o menu na hora)',
   loading: 'Carregando',
   controls: 'Controles',
   settings: 'Configurações',
@@ -140,6 +142,14 @@ const ptBR = {
   killedByWith: '{name} te eliminou com {weapon}',
   playerJoined: '{name} entrou',
   playerLeft: '{name} saiu',
+  keyChat: 'Chat da sala',
+  chatPlaceholder: 'Mensagem para a sala…',
+  chatSend: 'Enviar',
+  chatClose: 'Fechar o chat',
+  chatHint: 'Enter envia · Esc fecha',
+  chatMuted: 'Seu chat está silenciado pela moderação.',
+  chatSlow: 'Calma! Espere um pouco para mandar outra.',
+  touchChat: 'Chat',
   lostConnection: 'Sem conexão com o servidor',
   accountGuest: 'Sem conta: treino e bots estão liberados. Para jogar online, entre ou crie uma conta.',
   signIn: 'ENTRAR',
@@ -223,6 +233,8 @@ const en: Record<keyof typeof ptBR, string> = {
   play: 'PLAY',
   resume: 'BACK TO THE GAME',
   clickToResume: 'Click to return to the game',
+  aimOnNextKey: 'Aim comes back with your next key or click',
+  fullscreenDesktop: 'Fullscreen when playing (Esc opens and closes the menu instantly)',
   loading: 'Loading',
   controls: 'Controls',
   settings: 'Settings',
@@ -358,6 +370,14 @@ const en: Record<keyof typeof ptBR, string> = {
   killedByWith: '{name} took you out with {weapon}',
   playerJoined: '{name} joined',
   playerLeft: '{name} left',
+  keyChat: 'Room chat',
+  chatPlaceholder: 'Message the room…',
+  chatSend: 'Send',
+  chatClose: 'Close chat',
+  chatHint: 'Enter sends · Esc closes',
+  chatMuted: 'Your chat was muted by the moderators.',
+  chatSlow: 'Easy! Wait a little before sending another.',
+  touchChat: 'Chat',
   lostConnection: 'No connection to the server',
   accountGuest: 'No account: training and bots are open. To play online, sign in or create an account.',
   signIn: 'SIGN IN',
@@ -454,6 +474,12 @@ export const TIPS = {
     "Tip: the ice cream truck doesn't sell ice cream. It does play music.",
     'Tip: the flamingos are innocent.',
   ],
+};
+
+/** One-tap chat lines (phones: no keyboard needed mid-fight). */
+export const QUICK_CHAT = {
+  'pt-BR': ['GG', 'Boa!', 'Kkkkk', 'Cuidado!', 'Bora x1?', 'Valeu!'],
+  en: ['GG', 'Nice!', 'LOL', 'Watch out!', '1v1 me?', 'Thanks!'],
 };
 
 export const DEATH_MESSAGES = {

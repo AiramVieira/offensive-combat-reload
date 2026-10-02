@@ -14,9 +14,11 @@ export interface LiveAccount {
   participation: Promise<string | null> | null;
   /** Seconds alive toward the next "minute alive" award. */
   aliveCarry: number;
+  /** Chat mute (accounts.chatMutedUntil): ms since the epoch, 0 = can chat. Reloaded on MUTE_CHANNEL. */
+  chatMutedUntil: number;
 }
 
-export const liveAccount = (profile: GameProfile): LiveAccount => ({ profile, delta: emptyDelta(), participation: null, aliveCarry: 0 });
+export const liveAccount = (profile: GameProfile, chatMutedUntil = 0): LiveAccount => ({ profile, delta: emptyDelta(), participation: null, aliveCarry: 0, chatMutedUntil });
 
 export const accountLevelOf = (a: LiveAccount) => accountLevel(a.profile.xp).level;
 

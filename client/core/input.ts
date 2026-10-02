@@ -45,10 +45,29 @@ export class Input {
   padActive = false;
   /** Analog stick (touch): forward and right in -1..1; zero when the stick is idle. */
   readonly move = { forward: 0, right: 0 };
+  /** Typing in the chat: keys and the mouse belong to the text box, the game gets none of them. */
+  private typing = false;
+  /** The game let go of the mouse itself (releaseMouse): losing the pointer lock doesn't pause. */
+  private keepPlaying = false;
+  /** A key press is taking the mouse back (one request at a time). */
+  private relocking = false;
   onLockChange: (locked: boolean) => void = () => {};
 
   constructor(private element: HTMLElement) {
     window.addEventListener('keydown', (e) => {
+      if (this.typing) return;
+      if (this.locked && !IS_MOBILE && !this.padActive && document.pointerLockElement !== this.element) {
+        // Playing with the mouse let go (the browser kept it after an Esc): Esc pauses, as it does with the
+        // mouse locked; any other key is a press the browser accepts to give the mouse back.
+        if (e.code === 'Escape') {
+          this.setPlaying(false);
+          return;
+        }
+        if (!this.relocking) {
+          this.relocking = true;
+          void this.lock().finally(() => (this.relocking = false));
+        }
+      }
       if (!this.locked && !e.code.startsWith('F')) return;
       if (e.code === 'Space' || e.code === 'Tab' || e.code === 'F3' || e.code === 'F4' || e.code === 'F6') e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
@@ -57,7 +76,9 @@ export class Input {
     window.addEventListener('keyup', (e) => this.held.delete(e.code));
     window.addEventListener('blur', () => this.held.clear());
     document.addEventListener('mousedown', (e) => {
-      if (!this.locked) return;
+      if (!this.locked || this.typing) return;
+      // Desktop: a click with the mouse free takes it back (main.ts), it doesn't shoot.
+      if (!IS_MOBILE && document.pointerLockElement !== this.element) return;
       const code = `Mouse${e.button}`;
       this.held.add(code);
       this.pressed.add(code);
@@ -66,35 +87,63 @@ export class Input {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('mousemove', (e) => {
       // Desktop: only with the pointer locked (playing on a controller leaves the cursor free).
-      if (!this.locked || (!IS_MOBILE && document.pointerLockElement !== this.element)) return;
+      if (!this.locked || this.typing || (!IS_MOBILE && document.pointerLockElement !== this.element)) return;
       this.mouseDX += e.movementX;
       this.mouseDY += e.movementY;
     });
     document.addEventListener('pointerlockchange', () => {
-      this.locked = document.pointerLockElement === this.element;
+      const has = document.pointerLockElement === this.element;
+      if (!has && this.keepPlaying) {
+        this.keepPlaying = false;
+        return;
+      }
+      this.keepPlaying = false;
+      this.locked = has;
       if (!this.locked) this.held.clear();
       this.onLockChange(this.locked);
     });
   }
 
-  async lock() {
+  /**
+   * Takes the mouse for the game; resolves whether the browser gave it. It does only inside a click or a key
+   * press (not Esc), or with none when the game itself let go of it last (releaseMouse, unlock with Esc kept
+   * by the game): after the player's own Esc, it waits for their next click or key.
+   */
+  async lock(): Promise<boolean> {
     if (IS_MOBILE || this.padActive) {
       this.setPlaying(true);
-      return;
+      return true;
     }
-    try {
-      // Raw input where supported (no OS mouse acceleration).
-      await (this.element.requestPointerLock as (o?: object) => Promise<void>)({ unadjustedMovement: true });
-    } catch {
-      try {
-        await this.element.requestPointerLock();
-      } catch {
-        /* user will click again */
-      }
-    }
+    if (document.pointerLockElement === this.element) return true;
+    // Raw input where supported (no OS mouse acceleration), else the plain lock.
+    return (await this.requestLock({ unadjustedMovement: true })) || this.requestLock();
   }
 
-  /** Phones: start or stop playing (the pause button, the menu's play button). */
+  /** One pointer lock request, settled by the browser's change or error event (or its promise, where any). */
+  private requestLock(opts?: object): Promise<boolean> {
+    return new Promise((resolve) => {
+      const done = () => {
+        document.removeEventListener('pointerlockchange', done);
+        document.removeEventListener('pointerlockerror', done);
+        clearTimeout(timer);
+        resolve(document.pointerLockElement === this.element);
+      };
+      document.addEventListener('pointerlockchange', done);
+      document.addEventListener('pointerlockerror', done);
+      const timer = setTimeout(done, 1500);
+      try {
+        const r = (this.element.requestPointerLock as (o?: object) => Promise<void> | undefined)(opts);
+        r?.catch?.(done);
+      } catch {
+        done();
+      }
+    });
+  }
+
+  /**
+   * Starts or stops playing without the pointer lock: phones (the pause button, the menu's play button), a
+   * controller, and Esc out of the pause menu on a computer (the mouse comes back with the next key or click).
+   */
   setPlaying(on: boolean) {
     if (on === this.locked) return;
     this.locked = on;
@@ -104,6 +153,28 @@ export class Input {
       this.move.forward = this.move.right = 0;
     }
     this.onLockChange(on);
+  }
+
+  /**
+   * The chat's text box took (or gave back) the keyboard. Keys held when it opens are let go, so the player
+   * doesn't keep walking; presses not consumed yet are dropped (the Enter that opened it, for one).
+   */
+  setTyping(on: boolean) {
+    this.typing = on;
+    if (on) {
+      this.held.clear();
+      this.pressed.clear();
+    }
+  }
+
+  /**
+   * Lets go of the mouse without pausing (the chat opening). With the mouse locked, the browser always takes
+   * Esc to release it, and that would open the menu; freed first, Esc reaches the chat box instead.
+   */
+  releaseMouse() {
+    if (IS_MOBILE || document.pointerLockElement !== this.element) return;
+    this.keepPlaying = true;
+    document.exitPointerLock();
   }
 
   /** Leaves the game for the menu (Esc does it with the mouse; the pause button on phones). */

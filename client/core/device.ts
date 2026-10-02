@@ -52,6 +52,36 @@ export async function enterFullscreen() {
   }
 }
 
+type KeyboardLock = { lock?: (codes?: string[]) => Promise<void> };
+const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+
+/**
+ * The game can keep Esc in fullscreen (Keyboard Lock: Chrome, Edge). Then Esc no longer frees the mouse (the
+ * browser's rule everywhere else): the game pauses and resumes itself, the mouse aiming again at once. Holding
+ * Esc still leaves fullscreen.
+ */
+export const CAN_KEEP_ESCAPE = !IS_MOBILE && CAN_FULLSCREEN && typeof keyboard?.lock === 'function';
+
+let escapeKept = false;
+document.addEventListener('fullscreenchange', () => {
+  if (!isFullscreen()) escapeKept = false;
+});
+
+/** Keeps Esc for the game while in fullscreen; resolves whether it does. */
+export async function keepEscape(): Promise<boolean> {
+  if (!CAN_KEEP_ESCAPE || !isFullscreen()) return false;
+  try {
+    await keyboard!.lock!(['Escape']);
+    escapeKept = true;
+  } catch {
+    escapeKept = false;
+  }
+  return escapeKept;
+}
+
+/** Esc reaches the game instead of freeing the mouse. */
+export const escapeIsKept = () => escapeKept && isFullscreen();
+
 export async function exitFullscreen() {
   const d = document as FsDocument;
   try {

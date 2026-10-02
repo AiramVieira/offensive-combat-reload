@@ -8,6 +8,16 @@
   --bad: #ff4a3d;
   --display: 'Lilita One', 'Arial Black', system-ui, sans-serif;
   --body: 'Nunito', system-ui, sans-serif;
+  /* In-match HUD: white type straight on the game, a soft shadow to read over any background. */
+  --hud-dim: rgba(255, 255, 255, 0.72);
+  --hud-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.35);
+  --hud-glass: rgba(14, 16, 24, 0.58);
+  --hud-line: rgba(255, 255, 255, 0.22);
+  /* Notches and rounded corners (phones in landscape); 0 elsewhere. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
 }
 
 * {
@@ -221,48 +231,61 @@ body {
   }
 }
 
+/* Minimal HUD: no panels, white type with a soft shadow; labels small and dim, numbers in the display face. */
+#score,
+#health,
+#ammo,
+#chat,
+.death-card {
+  color: #fff;
+  text-shadow: var(--hud-shadow);
+}
+
 #score {
   position: absolute;
-  top: 14px;
+  top: calc(12px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 18px;
-  padding: 6px 18px;
-  font-weight: 800;
-  font-size: 13px;
-  text-transform: uppercase;
+  gap: 22px;
 }
 #score div {
   display: flex;
   flex-direction: column;
   align-items: center;
+  line-height: 1;
 }
 #score b {
   font-family: var(--display);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 400;
-  line-height: 1;
+}
+#score span {
+  margin-top: 3px;
+  font: 800 10px var(--body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hud-dim);
 }
 
 #killfeed {
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: calc(14px + var(--safe-t));
+  right: calc(16px + var(--safe-r));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 4px;
 }
 .feed-row {
-  background: rgba(27, 21, 48, 0.78);
+  background: var(--hud-glass);
   color: #fff;
-  padding: 4px 10px;
-  border-radius: 10px;
+  padding: 3px 10px;
+  border-radius: 6px;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 13px;
   display: flex;
-  gap: 8px;
+  gap: 7px;
   transition: opacity 0.5s;
 }
 .feed-row.fade {
@@ -272,10 +295,10 @@ body {
   color: var(--team-a);
 }
 .feed-row .victim {
-  color: var(--team-b);
+  color: #8fd0ff;
 }
 .feed-row .weapon {
-  color: #ddd;
+  color: var(--hud-dim);
   font-weight: 600;
 }
 .feed-row .icon.head {
@@ -284,101 +307,290 @@ body {
 
 #health {
   position: absolute;
-  left: 20px;
-  bottom: 20px;
+  left: calc(24px + var(--safe-l));
+  bottom: calc(20px + var(--safe-b));
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px;
-  padding: 8px 14px;
-  font-weight: 900;
-  font-size: 13px;
+}
+#health-num {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 0.9;
+  min-width: 2.3ch;
+  text-align: right;
+}
+.health-side {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 4px;
+}
+#health-label {
+  font: 800 10px var(--body);
+  letter-spacing: 0.08em;
+  color: var(--hud-dim);
 }
 #health-bar {
-  width: 180px;
-  height: 16px;
-  border: 3px solid var(--ink);
-  border-radius: 8px;
-  background: #3b3350;
+  width: 170px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hud-line);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   overflow: hidden;
 }
 #health-fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(#9dff7d, #4ed12f);
-  transition: width 0.15s;
-}
-#health-num {
-  font-family: var(--display);
-  font-weight: 400;
-  font-size: 30px;
-  min-width: 52px;
-  text-align: right;
-}
-#health.low {
-  animation: lowpulse 0.6s infinite alternate;
+  border-radius: 3px;
+  background: #fff;
+  transition: width 0.15s, background 0.2s;
 }
 #health.low #health-fill {
-  background: linear-gradient(#ff8a7d, #e0261a);
+  background: var(--bad);
+}
+#health.low #health-num {
+  color: #ff6b5c;
+  animation: lowpulse 0.6s infinite alternate;
 }
 @keyframes lowpulse {
   to {
-    background: #ffd0cb;
+    opacity: 0.55;
   }
 }
 
+/* Ammo, bottom right, one column anchored at the bottom: status line (reload, low, empty), then grenades and
+   the count side by side, then the weapon's name. Nothing overlaps: a status line pushes nothing down. */
 #ammo {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
-  padding: 8px 16px;
-  text-align: right;
-  min-width: 170px;
+  right: calc(24px + var(--safe-r));
+  bottom: calc(18px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
-#weapon-name {
-  font-weight: 900;
-  font-size: 13px;
+#ammo-status {
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+#ammo-status.reloading,
+#ammo-status.low,
+#ammo-status.empty {
+  display: flex;
+}
+#ammo-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 900 12px var(--body);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.7;
+  white-space: nowrap;
+}
+/* The key that reloads, as a small keycap before the text. */
+#ammo-warn:not([data-key=''])::before {
+  content: attr(data-key);
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 4px;
+  background: var(--hud-glass);
+  color: #fff;
+  font-size: 11px;
+  text-shadow: none;
+}
+#ammo-status.low #ammo-warn {
+  color: var(--warn);
+  animation: blink 0.8s infinite alternate;
+}
+#ammo-status.empty #ammo-warn {
+  color: var(--bad);
+}
+#reload-bar {
+  display: none;
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hud-line);
+  overflow: hidden;
+}
+#ammo-status.reloading #reload-bar {
+  display: block;
+}
+#reload-fill {
+  width: 0;
+  height: 100%;
+  background: #fff;
+}
+.ammo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .ammo-count {
   font-family: var(--display);
   display: flex;
   align-items: baseline;
-  justify-content: flex-end;
-  gap: 4px;
+  gap: 3px;
+  line-height: 0.9;
 }
 #ammo-mag {
   font-size: 44px;
   font-weight: 400;
-  line-height: 1;
 }
 #ammo-mag.low {
-  color: var(--bad);
-}
-.ammo-count span {
-  font-size: 22px;
-  opacity: 0.7;
-}
-#ammo-warn {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 12px);
-  font-family: var(--display);
-  font-size: 22px;
   color: var(--warn);
-  -webkit-text-stroke: 1.5px var(--ink);
-  text-shadow: 2px 2px 0 var(--ink);
-  white-space: nowrap;
-  opacity: 0;
 }
-#ammo-warn.visible {
-  opacity: 1;
-  animation: blink 0.8s infinite alternate;
+.ammo-sep,
+#ammo-reserve {
+  font-size: 20px;
+  color: var(--hud-dim);
+}
+#weapon-name {
+  font: 800 10px var(--body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hud-dim);
 }
 @keyframes blink {
   to {
     opacity: 0.45;
   }
+}
+
+/* --- Session chat (ui/chat.ts) ---------------------------------------------------------------------------- */
+#chat {
+  position: absolute;
+  /* Above the touch controls on phones (they cover the screen), so the box and the phrases take the taps. */
+  z-index: 2;
+  left: calc(24px + var(--safe-l));
+  bottom: calc(86px + var(--safe-b));
+  width: min(420px, 38vw);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 700 14px var(--body);
+}
+#chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.chat-line {
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  transition: opacity 0.6s;
+}
+.chat-line b {
+  margin-right: 6px;
+  font-weight: 900;
+  color: #8fd0ff;
+}
+.chat-line.mine b {
+  color: var(--team-a);
+}
+.chat-line.system {
+  color: var(--warn);
+}
+.chat-line.old {
+  opacity: 0;
+}
+/* Closed: only the latest lines, until they fade. Open: the history, scrollable, on a soft backdrop. */
+#chat:not(.open) .chat-line:nth-last-child(n + 7) {
+  display: none;
+}
+#chat.open #chat-log {
+  max-height: 14em;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--hud-glass);
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+#chat.open .chat-line {
+  opacity: 1;
+}
+#chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  text-shadow: none;
+}
+.chat-row {
+  display: flex;
+  gap: 6px;
+}
+#chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  outline: none;
+  background: rgba(14, 16, 24, 0.75);
+  color: #fff;
+  font: 700 15px var(--body);
+  /* The page blocks selection everywhere (and iOS won't type into a box under user-select: none). */
+  -webkit-user-select: text;
+  user-select: text;
+}
+#chat-input:focus {
+  border-color: #fff;
+}
+#chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+#chat-send,
+#chat-close,
+#chat-quick button {
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-radius: 10px;
+  background: rgba(14, 16, 24, 0.75);
+  color: #fff;
+  font: 900 13px var(--body);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#chat-send {
+  padding: 0 14px;
+  border-color: transparent;
+  background: var(--team-a);
+}
+#chat-close {
+  width: 38px;
+  padding: 0;
+}
+/* A mouse locked by the game can't click it: Esc closes the chat on a computer. */
+html:not(.mobile) #chat-close {
+  display: none;
+}
+#chat-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#chat-quick:empty {
+  display: none;
+}
+#chat-quick button {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+#chat-hint {
+  font: 700 11px var(--body);
+  color: var(--hud-dim);
+  text-shadow: var(--hud-shadow);
 }
 
 #death {
@@ -387,29 +599,29 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(60, 0, 0, 0.35);
+  background: radial-gradient(ellipse at center, rgba(40, 0, 0, 0.38), rgba(40, 0, 0, 0.62));
 }
 .death-card {
-  padding: 18px 28px;
   text-align: center;
-  max-width: min(520px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
   animation: popin-card 0.3s ease-out;
 }
 #death-msg {
   font-family: var(--display);
-  font-size: 26px;
+  font-size: 34px;
 }
 #death-timer {
   margin-top: 6px;
-  font-weight: 800;
-  opacity: 0.7;
+  font: 800 14px var(--body);
+  letter-spacing: 0.04em;
+  color: var(--hud-dim);
 }
 @keyframes popin-card {
   from {
-    transform: scale(0.6) rotate(-4deg);
+    transform: scale(0.8);
   }
   to {
-    transform: scale(1) rotate(0);
+    transform: scale(1);
   }
 }
 
@@ -786,34 +998,35 @@ input[type='range'] {
 #prompt {
   position: absolute;
   left: 50%;
-  bottom: 120px;
+  bottom: calc(120px + var(--safe-b));
   transform: translateX(-50%);
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 4px 10px;
-  padding: 8px 14px 10px;
-  font-weight: 900;
-  font-size: 17px;
+  gap: 5px 10px;
   min-width: 240px;
+  padding: 7px 14px 8px 8px;
+  border-radius: 12px;
+  background: var(--hud-glass);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font: 800 15px var(--body);
 }
 #prompt kbd {
   grid-row: span 2;
   display: inline-grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 3px solid var(--ink);
-  border-bottom-width: 6px;
-  border-radius: 9px;
-  background: #fff;
-  font: 900 20px var(--body);
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 8px;
+  font: 900 16px var(--body);
 }
 .prompt-bar {
-  height: 8px;
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  background: #3b3350;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hud-line);
   overflow: hidden;
 }
 #prompt-fill {
@@ -840,35 +1053,37 @@ input[type='range'] {
 }
 
 /* ---------- Grenades ---------- */
+/* Pips left of the ammo count, a thin rule between them. */
 #grenades {
-  position: absolute;
-  right: 12px;
-  top: -30px;
   display: flex;
   gap: 5px;
+  padding: 3px 12px 0 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.35);
+}
+#grenades:empty {
+  display: none;
 }
 #grenades i {
-  width: 16px;
-  height: 20px;
-  border: 3px solid var(--ink);
-  border-radius: 45% 45% 40% 40%;
-  background: #6b7d5c;
-  opacity: 0.3;
   position: relative;
+  width: 10px;
+  height: 14px;
+  border-radius: 45% 45% 40% 40%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  opacity: 0.25;
 }
+/* The fuse lever. */
 #grenades i::before {
   content: '';
   position: absolute;
   left: 2px;
-  top: -7px;
-  width: 7px;
-  height: 5px;
-  border: 2px solid var(--ink);
-  border-bottom: none;
-  background: #b8c0c8;
+  top: -4px;
+  width: 6px;
+  height: 3px;
+  border-radius: 1px;
+  background: inherit;
 }
 #grenades i.on {
-  background: #6f9a3f;
   opacity: 1;
 }
 
@@ -877,11 +1092,10 @@ input[type='range'] {
   left: 50%;
   top: calc(50% + 28px);
   width: 90px;
-  height: 9px;
+  height: 5px;
   transform: translateX(-50%);
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  background: rgba(27, 21, 48, 0.6);
+  border-radius: 3px;
+  background: var(--hud-glass);
   overflow: hidden;
 }
 #cook-fill {
@@ -1110,6 +1324,11 @@ input[type='range'] {
   transform: translate(-50%, -50%);
   width: min(640px, calc(100vw - 32px));
   padding: 14px 18px;
+  border-radius: 14px;
+  background: rgba(14, 16, 24, 0.82);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  color: #fff;
 }
 .sb-top {
   display: flex;
@@ -1122,6 +1341,10 @@ input[type='range'] {
   font-weight: 400;
   font-size: 24px;
 }
+.sb-top span {
+  color: var(--hud-dim);
+  font-weight: 800;
+}
 #scoreboard table {
   width: 100%;
   border-collapse: collapse;
@@ -1131,20 +1354,21 @@ input[type='range'] {
 }
 #scoreboard th {
   text-align: left;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.6;
+  color: var(--hud-dim);
   padding: 4px 6px;
 }
 #scoreboard td {
   padding: 5px 6px;
-  border-top: 2px solid rgba(27, 21, 48, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 #scoreboard tr.me td {
-  background: #ffe7c7;
+  background: rgba(255, 122, 26, 0.22);
 }
 #scoreboard tr.dead td {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 #net-status {
   position: absolute;
@@ -1686,6 +1910,50 @@ input[type='range'] {
 .touch-ads.on {
   background: rgba(255, 190, 60, 0.4);
 }
+/* Grenades left, on the grenade button; dimmed with none. */
+.touch-badge {
+  --b: max(18px, calc(var(--icon, 24px) * 0.75));
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: var(--b);
+  height: var(--b);
+  padding: 0 5px;
+  border-radius: calc(var(--b) / 2);
+  background: #fff;
+  color: #12141a;
+  font: 900 calc(var(--b) * 0.6) / var(--b) var(--body);
+  text-align: center;
+}
+.touch-btn.empty {
+  opacity: calc(var(--touch-opacity, 0.55) * 0.45);
+}
+/* Reload: a ring fills while reloading; the button pulses when the magazine runs low. */
+.touch-reload::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(var(--warn) calc(var(--p, 0) * 1turn), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  opacity: 0;
+  pointer-events: none;
+}
+.touch-reload.reloading::after {
+  opacity: 1;
+}
+.touch-reload.low {
+  opacity: 1;
+  border-color: var(--warn);
+  color: var(--warn);
+  animation: touchpulse 0.7s infinite alternate;
+}
+@keyframes touchpulse {
+  to {
+    box-shadow: 0 0 0 7px rgba(255, 210, 63, 0.28);
+  }
+}
 #touch.editing .touch-btn {
   opacity: 1;
   outline: 3px dashed #e6c23a;
@@ -1742,43 +2010,136 @@ input[type='range'] {
   }
 }
 
-/* The HUD on a phone: compact, and out of the stick (left) and the buttons (right). */
+/* The HUD on a phone: smaller, and out of the stick (left) and the buttons (right): health and ammo meet at
+   the bottom center, the chat sits under the top-left buttons. Grenades and the reload state are on their
+   buttons (ui/touch.ts), where the thumb is. */
 .mobile #score {
-  top: 6px;
-  transform: translateX(-50%) scale(0.6);
-  transform-origin: top center;
+  top: calc(6px + var(--safe-t));
+  gap: 14px;
+}
+.mobile #score b {
+  font-size: 15px;
+}
+.mobile #score span {
+  font-size: 8px;
 }
 .mobile #killfeed {
-  top: 44px;
-  right: 8px;
+  top: calc(40px + var(--safe-t));
+  right: calc(8px + var(--safe-r));
   gap: 3px;
 }
 .mobile .feed-row {
   font-size: 11px;
   padding: 2px 8px;
 }
-.mobile #health,
-.mobile #ammo {
-  bottom: 6px;
-  transform-origin: bottom center;
-}
 .mobile #health {
   left: auto;
   right: 50%;
-  margin-right: 8px;
-  transform: scale(0.55);
-  transform-origin: bottom right;
+  bottom: calc(8px + var(--safe-b));
+  margin-right: 14px;
+  gap: 6px;
+}
+.mobile #health-num {
+  font-size: 22px;
+}
+.mobile #health-label {
+  display: none;
+}
+.mobile #health-bar {
+  width: 96px;
+  height: 5px;
+}
+.mobile #health.low #health-num {
+  animation: none;
 }
 .mobile #ammo {
   right: auto;
   left: 50%;
-  margin-left: 8px;
-  min-width: 0;
-  transform: scale(0.55);
-  transform-origin: bottom left;
+  bottom: calc(6px + var(--safe-b));
+  margin-left: 14px;
+  align-items: flex-start;
+  gap: 2px;
+}
+.mobile #ammo-status {
+  align-items: flex-start;
+}
+.mobile #ammo-warn {
+  font-size: 10px;
+}
+.mobile #reload-bar {
+  width: 80px;
+  height: 3px;
+}
+.mobile #grenades {
+  display: none;
+}
+.mobile #ammo-mag {
+  font-size: 26px;
+}
+.mobile .ammo-sep,
+.mobile #ammo-reserve {
+  font-size: 14px;
+}
+.mobile #weapon-name {
+  display: none;
+}
+/* Closed: three one-line messages between the top buttons and the left fire button. */
+.mobile #chat {
+  left: calc(10px + var(--safe-l));
+  top: calc(16vh + var(--safe-t));
+  bottom: auto;
+  width: min(320px, 38vw);
+  font-size: 11px;
+}
+.mobile #chat:not(.open) .chat-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile #chat:not(.open) .chat-line:nth-last-child(n + 4) {
+  display: none;
+}
+/* Open: up top, right after the top buttons (the chat button stays reachable), clear of the keyboard, the
+   grenade and aim buttons. The top row is about half a screen height wide. */
+.mobile #chat.open {
+  left: calc(52vh + var(--safe-l));
+  top: calc(6px + var(--safe-t));
+  width: clamp(260px, calc(100vw - 98vh - var(--safe-l) - var(--safe-r)), 560px);
+  font-size: 12px;
+}
+.mobile #chat.open #chat-log {
+  order: 2;
+  max-height: 15vh;
+}
+/* The phrases in one row that scrolls sideways: wrapping would push the box down over the aim button. */
+.mobile #chat-quick {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+.mobile #chat-quick::-webkit-scrollbar {
+  display: none;
+}
+.mobile #chat-quick button {
+  flex: none;
+}
+.mobile #chat-form {
+  order: 1;
+}
+.mobile #chat-input {
+  font-size: 16px; /* 16px or iOS zooms the page in */
+}
+.mobile #death-msg {
+  font-size: 20px;
+}
+.mobile #death-timer {
+  font-size: 12px;
 }
 .mobile #prompt {
-  bottom: 74px;
+  bottom: calc(74px + var(--safe-b));
+  /* Tapped to humiliate: above the touch controls, which cover the whole screen. */
+  z-index: 2;
   pointer-events: auto;
   cursor: pointer;
 }
@@ -1880,94 +2241,6 @@ input[type='range'] {
   .home-card.wide {
     padding: 10px 12px;
   }
-}
-
-/* Minimal HUD on a phone (CoD Mobile style): no stickers, white text with a soft shadow, thin bars. */
-.mobile #score,
-.mobile #health,
-.mobile #ammo {
-  background: none;
-  border: none;
-  box-shadow: none;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-}
-.mobile #score {
-  transform: translateX(-50%);
-  gap: 14px;
-  padding: 0;
-  font-size: 11px;
-}
-.mobile #score b {
-  font-size: 15px;
-}
-.mobile #health {
-  transform: none;
-  bottom: 10px;
-  margin-right: 14px;
-  padding: 0;
-  gap: 6px;
-  font-size: 11px;
-}
-.mobile #health-bar {
-  width: 110px;
-  height: 6px;
-  border: none;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.25);
-}
-.mobile #health-num {
-  font-size: 16px;
-}
-.mobile #ammo {
-  transform: none;
-  bottom: 6px;
-  margin-left: 14px;
-  padding: 0;
-  text-align: left;
-}
-.mobile #ammo-mag {
-  font-size: 26px;
-}
-.mobile #weapon-name {
-  font-size: 9px;
-  opacity: 0.85;
-}
-.mobile .feed-row {
-  background: rgba(18, 20, 26, 0.45);
-  border: none;
-  box-shadow: none;
-}
-.mobile #health.low {
-  animation: none;
-}
-.mobile #health.low #health-num {
-  color: #ff6b5c;
-}
-.mobile #grenades {
-  right: auto;
-  left: 0;
-  top: -16px;
-  gap: 4px;
-}
-.mobile #grenades i {
-  width: 8px;
-  height: 10px;
-  border-width: 1.5px;
-  border-color: #fff;
-}
-.mobile .death-card {
-  background: rgba(18, 20, 26, 0.55);
-  border: none;
-  box-shadow: none;
-  color: #fff;
-  padding: 10px 20px;
-}
-.mobile #death-msg {
-  font-size: 18px;
-}
-.mobile #death-timer {
-  font-size: 13px;
 }
 
 /* --- Controllers (core/gamepad.ts, ui/padNav.ts) ------------------------------------------------------- */
