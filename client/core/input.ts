@@ -2,32 +2,25 @@
 // tablets the touch controls (ui/touch.ts) drive the same actions (`press`), an analog stick (`move`) and the
 // look (`addLook`), and "locked" means "playing" (there is no pointer lock: the play/pause buttons set it).
 import { IS_MOBILE } from './device';
-export type Action =
-  | 'forward' | 'back' | 'left' | 'right'
-  | 'jump' | 'crouch' | 'sprint' | 'reload'
-  | 'fire' | 'ads' | 'melee' | 'grenade' | 'taunt' | 'scoreboard' | 'debug' | 'hitboxes' | 'tuning';
+import { DEFAULT_KEYBINDS, FIXED_KEYS, toBindings, type Action, type Keybinds } from './keybinds';
+export type { Action };
 
-// Crouch is on C only: Ctrl+W closes the browser tab and cannot be intercepted outside fullscreen keyboard lock.
-export const BINDINGS: Record<Action, string[]> = {
-  forward: ['KeyW'],
-  back: ['KeyS'],
-  left: ['KeyA'],
-  right: ['KeyD'],
-  jump: ['Space'],
-  crouch: ['KeyC'],
-  sprint: ['ShiftLeft'],
-  reload: ['KeyR'],
-  fire: ['Mouse0'],
-  ads: ['Mouse2'],
-  melee: ['KeyF'],
-  grenade: ['KeyG'],
-  taunt: ['KeyE'],
-  scoreboard: ['Tab'],
-  debug: ['F3'],
-  hitboxes: ['F4'],
-  /** Live tuning of the animation feel (dev). */
-  tuning: ['F6'],
-};
+/** Keys of each action (the player's keybinds plus the fixed dev keys); filled by applyKeybinds. */
+export const BINDINGS = {} as Record<Action, string[]>;
+/**
+ * Every key some action uses: while playing, the browser's own use of them is blocked (Space scrolling, Tab
+ * focus, F5 reload, the side mouse buttons going back a page…). Paused, only the fixed dev keys are.
+ */
+const IN_USE = new Set<string>();
+const FIXED_CODES = new Set(Object.values(FIXED_KEYS));
+
+/** Points the actions at the player's keys (at startup and whenever the controls change). */
+export function applyKeybinds(kb: Keybinds) {
+  Object.assign(BINDINGS, toBindings(kb));
+  IN_USE.clear();
+  for (const codes of Object.values(BINDINGS)) for (const c of codes) IN_USE.add(c);
+}
+applyKeybinds(DEFAULT_KEYBINDS);
 
 export class Input {
   private held = new Set<string>();
@@ -69,7 +62,7 @@ export class Input {
         }
       }
       if (!this.locked && !e.code.startsWith('F')) return;
-      if (e.code === 'Space' || e.code === 'Tab' || e.code === 'F3' || e.code === 'F4' || e.code === 'F6') e.preventDefault();
+      if (this.locked ? IN_USE.has(e.code) : FIXED_CODES.has(e.code)) e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
       this.held.add(e.code);
     });
@@ -80,10 +73,26 @@ export class Input {
       // Desktop: a click with the mouse free takes it back (main.ts), it doesn't shoot.
       if (!IS_MOBILE && document.pointerLockElement !== this.element) return;
       const code = `Mouse${e.button}`;
+      if (IN_USE.has(code)) e.preventDefault();
       this.held.add(code);
       this.pressed.add(code);
     });
-    document.addEventListener('mouseup', (e) => this.held.delete(`Mouse${e.button}`));
+    document.addEventListener('mouseup', (e) => {
+      const code = `Mouse${e.button}`;
+      // The side buttons go back/forward a page on release.
+      if (this.locked && IN_USE.has(code)) e.preventDefault();
+      this.held.delete(code);
+    });
+    // The wheel: each step is a press (WheelUp/WheelDown) that is never held, for the one-press actions.
+    document.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.locked || this.typing || e.deltaY === 0) return;
+        if (!IS_MOBILE && document.pointerLockElement !== this.element) return;
+        this.pressed.add(e.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+      },
+      { passive: true },
+    );
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('mousemove', (e) => {
       // Desktop: only with the pointer locked (playing on a controller leaves the cursor free).

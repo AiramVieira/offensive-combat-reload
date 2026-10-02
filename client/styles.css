@@ -923,6 +923,63 @@ html:not(.mobile) #chat-close {
   font: 800 12px var(--body);
   text-align: center;
 }
+/* Remappable keys (menu.ts renderKeys): each key is a button; click it, then press the new key. */
+#controls-table th {
+  padding: 0 0 4px;
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+#controls-table tr.unbound td:first-child {
+  color: var(--bad);
+}
+.bind {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.bind-key {
+  min-width: 34px;
+  padding: 1px 6px;
+  border: 2px solid var(--ink);
+  border-bottom-width: 4px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font: 800 12px var(--body);
+  cursor: pointer;
+}
+.bind-key:hover {
+  background: var(--paper);
+}
+.bind-key.empty {
+  border-style: dashed;
+  opacity: 0.5;
+}
+.bind-key.capturing {
+  background: var(--warn);
+  opacity: 1;
+}
+.bind-clear {
+  border: 0;
+  padding: 0 3px;
+  background: none;
+  color: var(--ink);
+  font: 800 14px var(--body);
+  opacity: 0.45;
+  cursor: pointer;
+}
+.bind-clear:hover {
+  color: var(--bad);
+  opacity: 1;
+}
+.keys-notice {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--bad);
+}
 .menu-columns label {
   display: grid;
   grid-template-columns: 1fr 1.2fr 40px;
