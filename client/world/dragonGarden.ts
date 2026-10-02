@@ -12,12 +12,13 @@ import type { Physics } from './physics';
 import { MapBuilder, stairRun } from './mapBuilder';
 import { WaterDrops } from './hydrant';
 import { PropBus } from './props';
+import { skySpot, type SpatialSfx } from '../audio/spatial';
 import { surfaceMaterial } from './surfaces';
 import { skyClouds } from './decor';
 import { bamboo, bonsai, column, curvedRoof, dragonGeometry, dragonMaterial, FireBreath, Gong, Koi, Lanterns, moonGateWall, ORIENTAL as C, paperWall, pavilion, pine, railing, rock, seeded, stoneLantern, wallCap, type DragonColors } from './oriental';
 import type { GameMap, MapFrame, SpawnPoint } from './blockoutMap';
 
-export interface GardenSfx {
+export interface GardenSfx extends SpatialSfx {
   gong(): void;
   roar(): void;
   lanternTap(): void;
@@ -131,7 +132,7 @@ export async function buildDragonGardenMap(physics: Physics, scene: THREE.Scene,
   // Shoot it and it roars fire; the rest of the time it spits water into the basin.
   const fire = new FireBreath(scene);
   const dragonShot = props.register('dragao', () => {
-    if (!fire.active) sfx.roar();
+    if (!fire.active) sfx.at(fountain.mouth, 'loud', (s) => s.roar());
     fire.start(fountain.mouth, fountain.forward.clone().setY(0.12));
   });
   b.cuboidCollider(new THREE.Vector3(0, 1.45, 0), new THREE.Vector3(0.95, 1.15, 0.95), new THREE.Quaternion(), 'concrete', dragonShot);
@@ -251,7 +252,7 @@ export async function buildDragonGardenMap(physics: Physics, scene: THREE.Scene,
     paperWall(b, 'z', x, -26.85, -19.03, 3.15, hall.floors[0], [-23]);
     paperWall(b, 'z', x, -26.85, -19.03, 3.2, hall.floors[1], [-23]);
   }
-  const gong = new Gong(scene, b, 0, hall.floors[0], -25.4, props, () => sfx.gong());
+  const gong = new Gong(scene, b, 0, hall.floors[0], -25.4, props, () => sfx.at({ x: 0, y: hall.floors[0] + 2, z: -25.4 }, 'loud', (s) => s.gong()));
   animated.push((dt) => gong.update(dt));
   const table = (x: number, y: number, z: number, w: number, d: number) => {
     b.span(x - w / 2, y + 0.38, z - d / 2, x + w / 2, y + 0.46, z + d / 2, 'madeira', { tint: C.woodDark, collide: false });
@@ -481,18 +482,18 @@ export async function buildDragonGardenMap(physics: Physics, scene: THREE.Scene,
     const merged = new THREE.Mesh(mergeGeometries(glow, false)!, new THREE.MeshBasicMaterial({ color: 0xffe6a0 }));
     scene.add(merged);
   }
-  lanterns.finish(scene, b, props, () => sfx.lanternTap());
+  lanterns.finish(scene, b, props, (at) => sfx.at(at, 'normal', (s) => s.lanternTap()));
   animated.push((dt) => lanterns.update(dt));
 
   // Sky.
   const clouds = skyClouds(scene);
   let birdTimer = 4;
-  animated.push((dt) => {
+  animated.push((dt, { listener }) => {
     clouds(dt);
     birdTimer -= dt;
     if (birdTimer <= 0) {
       birdTimer = 6 + Math.random() * 9;
-      sfx.ambientBird();
+      sfx.at(skySpot(listener), 'ambient', (s) => s.ambientBird());
     }
   });
 

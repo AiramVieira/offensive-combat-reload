@@ -10,6 +10,7 @@ import { MapBuilder, stairRun, type Opening, type WallOpening } from './mapBuild
 import { addGltfToMap, gltfLoader } from './gltfMap';
 import { Hydrant, WaterDrops, type HydrantSfx } from './hydrant';
 import { PropBus } from './props';
+import { skySpot } from '../audio/spatial';
 import { surfaceMaterial } from './surfaces';
 import { buildCar, buildIceCreamTruck, buildVan } from './vehicles';
 import { flamingoGeometry, iceCreamTopper, skyClouds } from './decor';
@@ -32,7 +33,7 @@ export interface DummySpot {
 export interface MapFrame {
   /** Local player's feet (proximity gags). */
   feet: THREE.Vector3;
-  /** Camera position (sound volume by distance). */
+  /** Camera position (where sounds are heard from). */
   listener: THREE.Vector3;
   /** Throws the local player (hydrant). */
   launch(vx: number, vy: number, vz: number): void;
@@ -135,7 +136,7 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
     const now = performance.now() / 1000;
     if (now - lastJingle > 4) {
       lastJingle = now;
-      sfx.iceCream();
+      sfx.at({ x: 1, y: 1.5, z: 0 }, 'loud', (s) => s.iceCream());
     }
   };
   const truckShot = props.register('caminhao', jingle);
@@ -164,7 +165,7 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
     }
   });
   animated.push((dt, f) => {
-    for (const h of hydrants) h.update(dt, f.feet, f.listener, f.launch);
+    for (const h of hydrants) h.update(dt, f.feet, f.launch);
     drops.update(dt);
   });
   for (const [x, z] of [[-20, 8.5], [4, 8.5], [22, -8.5]]) {
@@ -230,7 +231,7 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
       material: 'wood',
       onShot: props.register(`flamingo:${fi}`, () => {
         spin = Math.min(spin + 18, 40);
-        sfx.squeak();
+        sfx.at({ x, y: 0.9, z }, 'normal', (s) => s.squeak());
       }),
     });
     animated.push((dt) => {
@@ -319,12 +320,12 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
   // Clouds drifting across the sky, and a bird now and then.
   const clouds = skyClouds(scene);
   let birdTimer = 4;
-  animated.push((dt) => {
+  animated.push((dt, { listener }) => {
     clouds(dt);
     birdTimer -= dt;
     if (birdTimer <= 0) {
       birdTimer = 6 + Math.random() * 9;
-      sfx.ambientBird();
+      sfx.at(skySpot(listener), 'ambient', (s) => s.ambientBird());
     }
   });
 
@@ -358,7 +359,7 @@ export async function buildBlockoutMap(physics: Physics, scene: THREE.Scene, ren
         cooldown -= dt;
         if (cooldown <= 0 && feet.distanceTo(gag.position) < 3.5) {
           cooldown = 4;
-          sfx.bark();
+          sfx.at(gag.position, 'normal', (s) => s.bark());
         }
       });
     }

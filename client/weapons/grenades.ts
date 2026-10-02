@@ -166,7 +166,7 @@ export class GrenadeProjectiles {
   private tmpV = new THREE.Vector3();
   private probe: RAPIER.Ball;
 
-  constructor(private physics: Physics, private scene: THREE.Scene, private data: GrenadeData, private onBounce: (strength: number) => void) {
+  constructor(private physics: Physics, private scene: THREE.Scene, private data: GrenadeData, private onBounce: (strength: number, at: THREE.Vector3) => void) {
     this.probe = new RAPIER.Ball(data.raio);
   }
 
@@ -238,7 +238,7 @@ export class GrenadeProjectiles {
       // Bounce "tink": a sudden change of velocity means it hit something.
       const v = g.body.linvel();
       const dv = this.tmpV.set(v.x, v.y, v.z).sub(g.lastVel).length();
-      if (dv > 2.5) this.onBounce(Math.min(1, dv / 12));
+      if (dv > 2.5) this.onBounce(Math.min(1, dv / 12), g.curr);
       g.lastVel.set(v.x, v.y, v.z);
 
       g.fuse -= dt;

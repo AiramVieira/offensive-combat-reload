@@ -1,4 +1,5 @@
 import type { Quality } from '../render/quality';
+import { IS_MOBILE } from './device';
 
 export interface Settings {
   /** Degrees per mouse count = sensitivity * 0.022 (Source-style). */
@@ -8,6 +9,8 @@ export interface Settings {
   fov: number;
   invertY: boolean;
   volume: number;
+  /** Spatial sound: 3D for headphones (HRTF), plain stereo for speakers, or automatic by device. */
+  spatialAudio: 'auto' | 'hrtf' | 'stereo';
   quality: Quality;
   // Touch (phones and tablets).
   /** Look speed of the touch drag (1 = default, ~0.18° per pixel). */
@@ -38,6 +41,7 @@ const DEFAULTS: Settings = {
   fov: 75,
   invertY: false,
   volume: 0.7,
+  spatialAudio: 'auto',
   quality: 'auto',
   touchSensitivity: 1,
   touchScale: 1,
@@ -65,4 +69,10 @@ export function saveSettings(s: Settings) {
   } catch {
     /* storage unavailable */
   }
+}
+
+/** 'auto': 3D on computers, plain stereo on phones (lighter, and often played on the speaker). */
+export function spatialMode(s: Settings): 'hrtf' | 'stereo' {
+  if (s.spatialAudio === 'auto') return IS_MOBILE ? 'stereo' : 'hrtf';
+  return s.spatialAudio;
 }

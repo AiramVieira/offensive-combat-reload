@@ -18,7 +18,7 @@ export class Screens {
     $('settings-title').textContent = t('settings');
     $('menu-debug-hint').textContent = t('debugHint');
     $('menu-resume-hint').textContent = t(IS_MOBILE ? 'tapToResume' : 'clickToResume');
-    const labels: [string, StringKey][] = [['lbl-sens', 'sensitivity'], ['lbl-ads', 'adsSensitivity'], ['lbl-fov', 'fov'], ['lbl-vol', 'volume'], ['lbl-invert', 'invertY'], ['lbl-quality', 'quality']];
+    const labels: [string, StringKey][] = [['lbl-sens', 'sensitivity'], ['lbl-ads', 'adsSensitivity'], ['lbl-fov', 'fov'], ['lbl-vol', 'volume'], ['lbl-spatial', 'spatialAudio'], ['lbl-invert', 'invertY'], ['lbl-quality', 'quality']];
     for (const [id, key] of labels) $(id).textContent = t(key);
 
     const rows: [StringKey, string][] = [
@@ -186,6 +186,14 @@ export class Screens {
     range('set-ads', 'out-ads', 'adsSensitivity', (v) => v.toFixed(2));
     range('set-fov', 'out-fov', 'fov', (v) => `${v}°`);
     range('set-vol', 'out-vol', 'volume', (v) => `${Math.round(v * 100)}%`);
+    const sp = $<HTMLSelectElement>('set-spatial');
+    const spatial: [Settings['spatialAudio'], StringKey][] = [['auto', 'spatialAuto'], ['hrtf', 'spatialHeadphones'], ['stereo', 'spatialSpeakers']];
+    sp.innerHTML = spatial.map(([v, k]) => `<option value="${v}">${t(k)}</option>`).join('');
+    sp.value = s.spatialAudio;
+    sp.addEventListener('change', () => {
+      s.spatialAudio = sp.value as Settings['spatialAudio'];
+      changed(s);
+    });
     const q = $<HTMLSelectElement>('set-quality');
     const options: [Quality, StringKey][] = [['auto', 'qualityAuto'], ['baixa', 'qualityLow'], ['media', 'qualityMedium'], ['alta', 'qualityHigh']];
     q.innerHTML = options.map(([v, k]) => `<option value="${v}">${t(k)}</option>`).join('');
