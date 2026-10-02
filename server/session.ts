@@ -10,7 +10,7 @@
 // with a lag tolerance.
 import type { WebSocket } from 'ws';
 import { HEALTH, HUMILIATION, SCORE } from '@shared/constants';
-import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
+import { clampExplosionDamage, computeDamage, explosionDamage, GRENADES, grenadeLevel, HIT_REGIONS, LETHAL_DAMAGE, minPenetrationKeep, WEAPONS, type HitRegion } from '@shared/weapons';
 import { ACCOUNT_XP } from '@shared/accountLevel';
 import { bodyStats } from '@shared/appearance';
 import type { MapId } from '@shared/maps';
@@ -22,7 +22,7 @@ const RIFLE = WEAPONS.rifle_padrao;
 const PEN_MIN_KEEP = minPenetrationKeep(RIFLE);
 const GRENADE = GRENADES.granada_frag;
 const GRENADE_LVL = grenadeLevel(GRENADE, ONLINE_GRENADE_LEVEL);
-/** Eye and chest height of an average body; the player's height scales them (bodyStats.scale). */
+/** Eye and chest height: the same for every body (height is only a look). */
 const EYE = 1.6;
 const CHEST = 1.1;
 /** Extra meters allowed between what the client saw and the server's latest positions (latency). */
@@ -73,8 +73,8 @@ interface Corpse extends CorpseInfo {
 }
 
 const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const eye = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + EYE * p.body.scale, p.state.p[2]];
-const chest = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + CHEST * p.body.scale, p.state.p[2]];
+const eye = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + EYE, p.state.p[2]];
+const chest = (p: SPlayer): Vec3 => [p.state.p[0], p.state.p[1] + CHEST, p.state.p[2]];
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const vec = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every(finite);
 
@@ -242,6 +242,8 @@ export class Session {
       case 'loadout':
         equip(p.conn.account, sanitizeLoadout(msg.lo));
         p.loadout = equippedOf(p.conn.account);
+        // Everyone else draws the new weapons in this player's hands.
+        this.broadcast({ t: 'playerLoadout', id: p.id, lo: p.loadout }, p.id);
         return;
       case 'selfDamage': {
         if (!p.alive || !finite(msg.amount) || msg.amount <= 0) return;
@@ -272,7 +274,7 @@ export class Session {
   private onHit(p: SPlayer, targetId: number, region: HitRegion, reportedDist: number, reportedKeep: number | undefined, now: number) {
     const target = this.players.get(targetId);
     if (!target || target === p || !p.alive || !target.alive || !finite(reportedDist)) return;
-    if (!['cabeca', 'tronco', 'bracos', 'pernas', 'virilha'].includes(region)) return;
+    if (!(HIT_REGIONS as readonly string[]).includes(region)) return;
     // Fire-rate check: no more confirmed hits per second than the rifle can fire (+ slack for jitter).
     p.hitTimes = p.hitTimes.filter((t) => now - t < 1000);
     const rifle = rifleData(p.loadout.rifle);

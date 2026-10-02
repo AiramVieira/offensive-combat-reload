@@ -2,7 +2,7 @@
 export type Action =
   | 'forward' | 'back' | 'left' | 'right'
   | 'jump' | 'crouch' | 'sprint' | 'reload'
-  | 'fire' | 'ads' | 'melee' | 'grenade' | 'taunt' | 'scoreboard' | 'debug' | 'hitboxes';
+  | 'fire' | 'ads' | 'melee' | 'grenade' | 'taunt' | 'scoreboard' | 'debug' | 'hitboxes' | 'tuning';
 
 // Crouch is on C only: Ctrl+W closes the browser tab and cannot be intercepted outside fullscreen keyboard lock.
 export const BINDINGS: Record<Action, string[]> = {
@@ -22,6 +22,8 @@ export const BINDINGS: Record<Action, string[]> = {
   scoreboard: ['Tab'],
   debug: ['F3'],
   hitboxes: ['F4'],
+  /** Live tuning of the animation feel (dev). */
+  tuning: ['F6'],
 };
 
 export class Input {
@@ -35,7 +37,7 @@ export class Input {
   constructor(private element: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       if (!this.locked && !e.code.startsWith('F')) return;
-      if (e.code === 'Space' || e.code === 'Tab' || e.code === 'F3' || e.code === 'F4') e.preventDefault();
+      if (e.code === 'Space' || e.code === 'Tab' || e.code === 'F3' || e.code === 'F4' || e.code === 'F6') e.preventDefault();
       if (!e.repeat) this.pressed.add(e.code);
       this.held.add(e.code);
     });

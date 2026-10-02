@@ -1442,13 +1442,19 @@ input[type='range'] {
 }
 .cz-tabs {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
   gap: 6px;
 }
-@media (max-width: 1000px) {
-  .cz-tabs {
-    grid-template-columns: repeat(4, 1fr);
-  }
+.cz-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 8px 12px;
+  font: 700 14px var(--body);
+  color: var(--ink);
+  background: #fff;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
 }
 .cz-tabs button {
   display: flex;
@@ -1563,3 +1569,16 @@ input[type='range'] {
   background: #fff;
   cursor: pointer;
 }
+.cz-anims {
+  margin-top: 8px;
+  justify-content: center;
+}
+.cz-anims button {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.cz-dev {
+  margin-top: 4px;
+  opacity: 0.8;
+}
+

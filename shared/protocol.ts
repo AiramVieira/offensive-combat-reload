@@ -150,6 +150,8 @@ export type ServerMsg =
   | { t: 'taunt'; id: number; corpse: number }
   | { t: 'tauntEnd'; id: number; corpse: number; done: boolean; awards: Award[]; players: PlayerInfo[] }
   | { t: 'scores'; players: PlayerInfo[] }
+  /** A player changed their equipped weapon levels: everyone else sees the new models. */
+  | { t: 'playerLoadout'; id: number; lo: Loadout }
   | { t: 'prop'; id: string; by: number }
   | { t: 'pong'; c: number; s: number }
   /** The account's progress changed (points only come from the server online). */

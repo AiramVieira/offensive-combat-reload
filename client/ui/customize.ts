@@ -1,27 +1,41 @@
 // Character editor (Perfil → Personalizar), in the spirit of The Sims' Create-a-Sim: a big 3D stage that
-// zooms to the part being edited, category tabs, and every option as a thumbnail rendered from the
-// character itself (in its current colors), with color swatches under each group. Shows what the look does
-// in the game (health, eye height, hitbox, reload, speed) as you choose.
+// zooms to the part being edited, category tabs over the whole catalog (shared/catalog.ts), a search box,
+// every option as a thumbnail rendered from the character itself (in its current colors), and the palette's
+// swatches for each color channel of what is worn (primary, secondary, detail). Shows what the look does in
+// the game (health, eye height, hitbox, reload, speed) as you choose.
 import * as THREE from 'three';
 import {
+  allowedColors,
   ARM_LOSSES,
+  BEARDS,
   BUILDS,
-  CATALOG,
   defaultAppearance,
   EYE_COLORS,
-  HAIR,
+  EYE_STYLES,
+  BROW_STYLES,
+  EAR_STYLES,
+  FACE_MARKS,
+  FACE_SHAPES,
+  MOUTH_STYLES,
+  NOSE_STYLES,
+  sanitizeFace,
+  type Face,
   HAIR_COLORS,
+  HAIR_STYLES,
   HEIGHTS,
+  itemIn,
   LEG_LOSSES,
-  SKIN_TONES,
+  SKIN_COLORS,
   bodyStats,
+  randomAppearance,
   hitboxSize,
+  wear,
   type Appearance,
-  type Slot,
 } from '@shared/appearance';
-import { MOVE } from '@shared/constants';
+import { catalogItem, catalogOf, CATALOG, type CatalogItem, type Category, type Channel, type Slot } from '@shared/catalog';
 import type { Sex } from '@shared/protocol';
-import { Avatar, disposeAvatar } from '../entities/avatar';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { Avatar, appearanceToConfig, disposeAvatar } from '../entities/avatar';
 import { api } from '../net/api';
 import { errorText } from './auth';
 import { getLang } from './strings';
@@ -31,18 +45,74 @@ const L: Record<string, [string, string]> = {
   title: ['Personalizar personagem', 'Customize character'],
   tabBody: ['Corpo', 'Body'],
   tabHair: ['Rosto e cabelo', 'Face & hair'],
-  tabTop: ['Camiseta', 'Top'],
+  tabTop: ['Parte de cima', 'Tops'],
   tabBottom: ['Parte de baixo', 'Bottoms'],
-  tabShoes: ['Sapatos', 'Shoes'],
+  tabShoes: ['Calçados', 'Shoes'],
+  tabHead: ['Cabeça', 'Headwear'],
   tabAcc: ['Acessórios', 'Accessories'],
+  tabTactical: ['Tático', 'Tactical'],
   tabPcd: ['Modo PCD', 'PCD mode'],
+  search: ['Buscar peça…', 'Search items…'],
+  results: ['Resultados', 'Results'],
+  noResults: ['Nada encontrado.', 'Nothing found.'],
+  soon: ['As peças desta categoria chegam nas próximas atualizações.', 'Items in this category arrive in the next updates.'],
   height: ['Altura', 'Height'],
   build: ['Biotipo', 'Build'],
   skin: ['Cor da pele', 'Skin color'],
   hairStyle: ['Cabelo', 'Hair'],
-  hairColor: ['Cor do cabelo', 'Hair color'],
+  hairColor: ['Cor do cabelo e da barba', 'Hair & beard color'],
+  beard: ['Barba', 'Facial hair'],
   eyeColor: ['Cor dos olhos', 'Eye color'],
-  color: ['Cor', 'Color'],
+  eyeStyle: ['Olhos', 'Eyes'],
+  redondo: ['Redondos', 'Round'],
+  amendoado: ['Amendoados', 'Almond'],
+  marcante: ['Marcantes', 'Sharp'],
+  caido: ['Caídos', 'Downturned'],
+  puxado: ['Puxados', 'Upturned'],
+  grande: ['Grandes', 'Big'],
+  // The face (keys prefixed: some values repeat across features).
+  faceShape: ['Formato do rosto', 'Face shape'],
+  'formato.oval': ['Oval', 'Oval'],
+  'formato.quadrado': ['Quadrado', 'Square'],
+  'formato.redondo': ['Redondo', 'Round'],
+  'formato.longo': ['Fino e longo', 'Long'],
+  'formato.coracao': ['Coração', 'Heart'],
+  brows: ['Sobrancelhas', 'Brows'],
+  'sobrancelhas.reta': ['Retas', 'Straight'],
+  'sobrancelhas.arqueada': ['Arqueadas', 'Arched'],
+  'sobrancelhas.grossa': ['Grossas', 'Thick'],
+  'sobrancelhas.fina': ['Finas', 'Thin'],
+  nose: ['Nariz', 'Nose'],
+  'nariz.reto': ['Reto', 'Straight'],
+  'nariz.largo': ['Largo', 'Wide'],
+  'nariz.aquilino': ['Aquilino', 'Aquiline'],
+  'nariz.arrebitado': ['Arrebitado', 'Upturned'],
+  mouth: ['Boca', 'Mouth'],
+  'boca.media': ['Média', 'Medium'],
+  'boca.fina': ['Lábios finos', 'Thin lips'],
+  'boca.carnuda': ['Lábios carnudos', 'Full lips'],
+  ears: ['Orelhas', 'Ears'],
+  'orelhas.normal': ['Normais', 'Normal'],
+  'orelhas.pequena': ['Pequenas', 'Small'],
+  'orelhas.abano': ['De abano', 'Protruding'],
+  marks: ['Marcas', 'Marks'],
+  'marcas.nenhuma': ['Nenhuma', 'None'],
+  'marcas.sardas': ['Sardas', 'Freckles'],
+  'marcas.cicatriz': ['Cicatriz', 'Scar'],
+  'marcas.pinta': ['Pinta', 'Beauty mark'],
+  animIdle: ['Parado', 'Idle'],
+  animWalk: ['Andar', 'Walk'],
+  animRun: ['Correr', 'Run'],
+  animDance: ['Dançar', 'Dance'],
+  animAim: ['Mirar', 'Aim'],
+  random: ['Aleatório', 'Random'],
+  copyJson: ['Copiar JSON', 'Copy JSON'],
+  copied: ['Configuração copiada (JSON).', 'Config copied (JSON).'],
+  exportGlb: ['Exportar GLB', 'Export GLB'],
+  exported: ['Modelo exportado (personagem.glb).', 'Model exported (personagem.glb).'],
+  P: ['Cor principal', 'Main color'],
+  S: ['Cor secundária', 'Secondary color'],
+  D: ['Detalhe', 'Detail'],
   arm: ['Braço ou mão', 'Arm or hand'],
   leg: ['Perna', 'Leg'],
   pcdHint: [
@@ -55,56 +125,16 @@ const L: Record<string, [string, string]> = {
   saved: ['Personagem salvo.', 'Character saved.'],
   effects: ['No jogo', 'In the game'],
   health: ['Vida', 'Health'],
-  eye: ['Visão a', 'Eye at'],
   reload: ['Recarga', 'Reload'],
   speed: ['Velocidade', 'Speed'],
   hitbox: ['Hitbox', 'Hitbox'],
   dragHint: ['Arraste para girar · role para aproximar', 'Drag to rotate · scroll to zoom'],
   none: ['Nenhum', 'None'],
-  noneF: ['Nenhuma', 'None'],
-  pants: ['Calças', 'Pants'],
-  shorts: ['Bermudas', 'Shorts'],
-  skirts: ['Saias', 'Skirts'],
   pequeno: ['Pequeno', 'Short'],
   medio: ['Médio', 'Medium'],
   alto: ['Alto', 'Tall'],
   magro: ['Magro', 'Slim'],
   gordo: ['Gordo', 'Heavy'],
-  camiseta: ['Camiseta', 'Top'],
-  sapatos: ['Sapatos', 'Shoes'],
-  chapeu: ['Chapéu', 'Hat'],
-  oculos: ['Óculos', 'Glasses'],
-  pulseira: ['Pulseira', 'Bracelet'],
-  basica: ['Básica', 'Basic tee'],
-  regata: ['Regata', 'Tank top'],
-  polo: ['Polo', 'Polo'],
-  calcaJeans: ['Jeans', 'Jeans'],
-  calcaCargo: ['Cargo', 'Cargo'],
-  calcaMoletom: ['Moletom', 'Sweatpants'],
-  bermudaPraia: ['Praia', 'Board'],
-  bermudaJeans: ['Jeans', 'Denim'],
-  bermudaEsportiva: ['Esportiva', 'Sport'],
-  saiaLapis: ['Lápis', 'Pencil'],
-  saiaRodada: ['Rodada', 'Circle'],
-  saiaPregas: ['Pregas', 'Pleated'],
-  tenis: ['Tênis', 'Sneakers'],
-  bota: ['Bota', 'Boots'],
-  chinelo: ['Chinelo', 'Flip-flops'],
-  bone: ['Boné', 'Cap'],
-  palha: ['Palha', 'Straw hat'],
-  gorro: ['Gorro', 'Beanie'],
-  escuros: ['Escuros', 'Sunglasses'],
-  redondos: ['Redondos', 'Round'],
-  aviador: ['Aviador', 'Aviators'],
-  couro: ['Couro', 'Leather'],
-  micangas: ['Miçangas', 'Beads'],
-  relogio: ['Relógio', 'Watch'],
-  curto: ['Curto', 'Short'],
-  topete: ['Topete', 'Quiff'],
-  blackPower: ['Black power', 'Afro'],
-  rabo: ['Rabo de cavalo', 'Ponytail'],
-  longo: ['Longo', 'Long'],
-  coque: ['Coque', 'Bun'],
   complete: ['Completo', 'Full'],
   bracoEsq: ['Sem braço esq.', 'No left arm'],
   bracoDir: ['Sem braço dir.', 'No right arm'],
@@ -112,13 +142,43 @@ const L: Record<string, [string, string]> = {
   maoDir: ['Sem mão dir.', 'No right hand'],
   pernaEsq: ['Sem perna esq.', 'No left leg'],
   pernaDir: ['Sem perna dir.', 'No right leg'],
+  // Groups of the catalog.
+  camiseta: ['Camisetas e regatas', 'Tees & tanks'],
+  blusa: ['Blusas e moletons', 'Sweaters & hoodies'],
+  jaqueta: ['Jaquetas e casacos (por cima)', 'Jackets & coats (over)'],
+  calca: ['Calças', 'Pants'],
+  short: ['Shorts e bermudas', 'Shorts'],
+  saia: ['Saias', 'Skirts'],
+  calcado: ['Calçados', 'Shoes'],
+  // Slots.
+  tronco: ['Parte de cima', 'Top'],
+  sobreposicao: ['Jaqueta', 'Jacket'],
+  baixo: ['Parte de baixo', 'Bottoms'],
+  cabeca: ['Cabeça', 'Head'],
+  rosto: ['Rosto', 'Face'],
+  orelhas: ['Orelhas', 'Ears'],
+  pescoco: ['Pescoço', 'Neck'],
+  pulsoE: ['Pulso esquerdo', 'Left wrist'],
+  pulsoD: ['Pulso direito', 'Right wrist'],
+  maos: ['Mãos', 'Hands'],
+  antebraco: ['Antebraço', 'Forearm'],
+  cotovelos: ['Cotovelos', 'Elbows'],
+  ombro: ['Ombro', 'Shoulder'],
+  ombros: ['Ombros', 'Shoulders'],
+  colete: ['Colete', 'Vest'],
+  acessorioColete: ['No colete', 'On the vest'],
+  peito: ['Peito', 'Chest'],
+  costas: ['Costas', 'Back'],
+  cintura: ['Cintura', 'Waist'],
+  coxaE: ['Coxa esquerda', 'Left thigh'],
+  coxaD: ['Coxa direita', 'Right thigh'],
+  joelhos: ['Joelhos', 'Knees'],
+  pes: ['Pés', 'Feet'],
+  pele: ['Pele', 'Skin'],
 };
 const l = (key: string) => (L[key] ?? [key, key])[getLang() === 'en' ? 1 : 0];
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const clone = (a: Appearance): Appearance => JSON.parse(JSON.stringify(a));
-
-/** Clothing colors offered as swatches (any color can still be picked). */
-const CLOTH_COLORS = ['#f4f1ea', '#222226', '#7a8a96', '#b3312a', '#ff7a1a', '#ffd23f', '#2f9b6f', '#4a5a32', '#2f9bff', '#2d3b6b', '#3d5a8a', '#8a3a8a', '#d86aa8', '#6b4226', '#e2c07a', '#5a4a6a'];
 
 // --- Camera framing per part of the body ---------------------------------------------------------------
 
@@ -132,21 +192,27 @@ const FRAMES: Record<Focus, { y: number; dist: number }> = {
   feet: { y: 0.12, dist: 1.6 },
 };
 
+/**
+ * Lighting that shows the facets (style guide): a strong warm key light and a weak cool hemisphere; the
+ * temperature difference between lit and shadowed faces is what makes the style read.
+ */
 function setupScene(scene: THREE.Scene) {
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 2.2));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-  sun.position.set(2, 4, -3);
+  scene.add(new THREE.HemisphereLight(0xc4d8ff, 0x5a4c40, 1.6));
+  const sun = new THREE.DirectionalLight(0xffe2bd, 2.8);
+  sun.position.set(2.5, 4, -3);
   scene.add(sun);
+  const rim = new THREE.DirectionalLight(0x9db8ff, 0.8);
+  rim.position.set(-3, 2.5, 3);
+  scene.add(rim);
 }
 
-/** What the look does in the game, in one line. */
+/**
+ * What the look does in the game, in one line. Height, build and clothes are only looks (same health, eye
+ * and hitbox for everyone); only the PCD mode changes the hitbox, the reload and the speed.
+ */
 function effectsText(a: Appearance): string {
   const b = bodyStats(a);
-  const parts = [
-    `${l('health')} ${b.maxHealth}`,
-    `${l('eye')} ${(MOVE.eyeStand * b.scale).toFixed(2).replace('.', getLang() === 'en' ? '.' : ',')} m`,
-    `${l('hitbox')} ${Math.round(hitboxSize(b) * 100)}%`,
-  ];
+  const parts = [`${l('health')} ${b.maxHealth}`, `${l('hitbox')} ${Math.round(hitboxSize(b) * 100)}%`];
   if (b.reloadMul !== 1) parts.push(`${l('reload')} +${Math.round((b.reloadMul - 1) * 100)}%`);
   if (b.speedMul !== 1) parts.push(`${l('speed')} −${Math.round((1 - b.speedMul) * 100)}%`);
   return parts.join(' · ');
@@ -169,6 +235,8 @@ class Stage {
   private lastX = 0;
   private raf = 0;
   private last = performance.now();
+  private anim: Anim = 'idle';
+  private t = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -200,6 +268,7 @@ class Stage {
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
       if (this.idleSpin && !this.dragging) this.yaw += dt * 0.35;
+      this.animate(dt);
       this.draw(dt);
     };
     this.raf = requestAnimationFrame(loop);
@@ -207,10 +276,27 @@ class Stage {
 
   show(look: Appearance, sex: Sex) {
     if (this.avatar) disposeAvatar(this.avatar);
-    this.avatar = new Avatar(this.scene, look, sex);
-    this.avatar.idle(false);
+    // Live (not baked): the editor rebuilds it on every change anyway.
+    this.avatar = new Avatar(this.scene, look, sex, { bake: false });
     this.avatar.visible = true;
-    this.scale = bodyStats(look).scale;
+    this.scale = bodyStats(look).visualScale;
+    this.animate(0);
+  }
+
+  play(a: Anim) {
+    this.anim = a;
+    this.t = 0;
+  }
+
+  private animate(dt: number) {
+    const a = this.avatar;
+    if (!a) return;
+    this.t += dt;
+    if (this.anim === 'walk') a.walk(dt, 3);
+    else if (this.anim === 'run') a.walk(dt, 7);
+    else if (this.anim === 'dance') a.dance(this.t % 3.6);
+    else if (this.anim === 'aim') a.pose(dt, { speed: 0, crouch: false, pitch: 0, ads: true, reload: false, knife: false, cook: false });
+    else a.idle(false, this.t);
   }
 
   focus(f: Focus) {
@@ -245,6 +331,15 @@ class Stage {
     this.renderer.forceContextLoss();
   }
 }
+
+type Anim = 'idle' | 'walk' | 'run' | 'dance' | 'aim';
+const ANIMS: [Anim, string][] = [
+  ['idle', 'animIdle'],
+  ['walk', 'animWalk'],
+  ['run', 'animRun'],
+  ['dance', 'animDance'],
+  ['aim', 'animAim'],
+];
 
 /** Renders option thumbnails off screen, a few per frame, cached by look and framing. */
 class Thumbnails {
@@ -285,12 +380,12 @@ class Thumbnails {
         job.done(cached);
         continue;
       }
-      const a = new Avatar(this.scene, job.look, job.sex);
+      const a = new Avatar(this.scene, job.look, job.sex, { bake: false });
       a.idle(false);
       a.visible = true;
       a.root.rotation.y = job.focus === 'head' ? 0.25 : 0.4;
       // Full-body thumbnails share one framing, so heights compare; close-ups follow the height.
-      const scale = job.focus === 'full' ? 1 : bodyStats(job.look).scale;
+      const scale = job.focus === 'full' ? 1 : bodyStats(job.look).visualScale;
       const fr = FRAMES[job.focus];
       const dist = job.focus === 'full' ? 5.6 : fr.dist * (job.focus === 'head' ? 0.85 : 0.8);
       this.camera.position.set(0, fr.y * scale + 0.06, -dist);
@@ -319,16 +414,36 @@ class Thumbnails {
 
 // --- Editor -------------------------------------------------------------------------------------------------
 
-type Tab = 'body' | 'hair' | 'top' | 'bottom' | 'shoes' | 'acc' | 'pcd';
+type Tab = 'body' | 'hair' | 'top' | 'bottom' | 'shoes' | 'head' | 'acc' | 'tactical' | 'pcd';
 const TABS: { id: Tab; icon: string; label: string; focus: Focus }[] = [
   { id: 'body', icon: '🧍', label: 'tabBody', focus: 'full' },
   { id: 'hair', icon: '💇', label: 'tabHair', focus: 'head' },
   { id: 'top', icon: '👕', label: 'tabTop', focus: 'torso' },
   { id: 'bottom', icon: '👖', label: 'tabBottom', focus: 'legs' },
   { id: 'shoes', icon: '👟', label: 'tabShoes', focus: 'feet' },
+  { id: 'head', icon: '🧢', label: 'tabHead', focus: 'head' },
   { id: 'acc', icon: '🕶️', label: 'tabAcc', focus: 'head' },
+  { id: 'tactical', icon: '🎖️', label: 'tabTactical', focus: 'torso' },
   { id: 'pcd', icon: '♿', label: 'tabPcd', focus: 'full' },
 ];
+
+/** Where the camera goes to show an item of a slot. */
+const SLOT_FOCUS: Partial<Record<Slot, Focus>> = {
+  tronco: 'torso',
+  sobreposicao: 'torso',
+  baixo: 'legs',
+  calcado: 'feet',
+  cabeca: 'head',
+  rosto: 'head',
+  orelhas: 'head',
+  pescoco: 'head',
+  cintura: 'legs',
+  coxaE: 'legs',
+  coxaD: 'legs',
+  joelhos: 'legs',
+  pes: 'feet',
+};
+const focusOf = (slot: Slot): Focus => SLOT_FOCUS[slot] ?? 'torso';
 
 /** One group of thumbnail cards: each option is the current look with one thing changed. */
 interface CardGroup {
@@ -342,11 +457,12 @@ interface ColorGroup {
   colors: readonly string[];
   get: (a: Appearance) => string;
   set: (a: Appearance, c: string) => void;
-  /** Hidden when there is nothing to color (no hat, no glasses...). */
-  visible?: (a: Appearance) => boolean;
 }
 
 type Group = CardGroup | ColorGroup;
+
+/** Accent-free search: lower case, no diacritics. */
+const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 interface Options {
   look: Appearance;
@@ -358,8 +474,11 @@ interface Options {
 
 export function showCustomizer(root: HTMLElement, o: Options) {
   let look = clone(o.look);
+  // A look saved before the face's features: the defaults.
+  look.rosto = sanitizeFace(look.rosto);
   const sex = o.sex;
   let tab: Tab = 'body';
+  let query = '';
   const card = root.closest('.home-card');
   card?.classList.add('wide');
 
@@ -367,12 +486,18 @@ export function showCustomizer(root: HTMLElement, o: Options) {
     <div class="customizer">
       <div class="cz-stage">
         <canvas id="cz-canvas"></canvas>
+        <div class="cz-anims seg">${ANIMS.map(([a, k]) => `<button type="button" data-anim="${a}" aria-pressed="${a === 'idle'}">${l(k)}</button>`).join('')}</div>
         <p class="hint">${l('dragHint')}</p>
         <p class="cz-effects"><b>${l('effects')}:</b> <span id="cz-effects"></span></p>
         <div class="cz-actions">
           <button id="cz-save" class="small-btn">${l('save')}</button>
+          <button id="cz-random" class="link-btn">🎲 ${l('random')}</button>
           <button id="cz-reset" class="link-btn">${l('reset')}</button>
           <button id="cz-cancel" class="link-btn">${l('cancel')}</button>
+        </div>
+        <div class="cz-actions cz-dev">
+          <button id="cz-json" class="link-btn">${l('copyJson')}</button>
+          <button id="cz-glb" class="link-btn">${l('exportGlb')}</button>
         </div>
       </div>
       <div class="cz-panel">
@@ -380,6 +505,7 @@ export function showCustomizer(root: HTMLElement, o: Options) {
         <nav class="cz-tabs" role="tablist">
           ${TABS.map((tb) => `<button type="button" role="tab" data-tab="${tb.id}" title="${esc(l(tb.label))}"><span class="cz-icon">${tb.icon}</span><span>${esc(l(tb.label))}</span></button>`).join('')}
         </nav>
+        <input id="cz-search" class="cz-search" type="search" placeholder="${esc(l('search'))}" />
         <div id="cz-content" class="cz-content"></div>
       </div>
     </div>`;
@@ -388,60 +514,128 @@ export function showCustomizer(root: HTMLElement, o: Options) {
   const thumbs = new Thumbnails();
   const content = root.querySelector<HTMLElement>('#cz-content')!;
   const effects = root.querySelector<HTMLElement>('#cz-effects')!;
+  const search = root.querySelector<HTMLInputElement>('#cz-search')!;
+  search.oninput = () => {
+    query = search.value;
+    renderContent();
+  };
 
   // --- Groups of each tab --------------------------------------------------------------------------------
-  const pieceCards = (slot: Slot, focus: Focus, title: string, filter: (id: string) => boolean = () => true): CardGroup => ({
+  const nameOf = (i: CatalogItem) => (getLang() === 'en' ? i.name.en : i.name.pt);
+
+  /** Applying a catalog item: hair and facial hair have their own fields, the rest goes in its slot. */
+  const applyItem = (i: CatalogItem) => (a: Appearance) => {
+    if (i.category === 'cabelo') a.cabelo.id = i.id;
+    else if (i.category === 'barba') a.barba = i.id;
+    else wear(a, i.slots[0], i.id, sex);
+  };
+  const isWorn = (i: CatalogItem) => (a: Appearance) =>
+    i.category === 'cabelo' ? a.cabelo.id === i.id : i.category === 'barba' ? a.barba === i.id : itemIn(a, i.slots[0])?.id === i.id;
+
+  /** Cards for catalog items; `none` adds an option that empties the slot. */
+  const itemCards = (title: string, items: CatalogItem[], focus: Focus, none?: Slot): CardGroup => ({
     title,
     focus,
-    options: CATALOG[slot].filter(filter).map((id) => ({
-      value: id,
-      label: id ? l(id) : l(slot === 'pulseira' ? 'noneF' : 'none'),
-      apply: (a) => (a.roupas[slot].id = id),
-      selected: (a) => a.roupas[slot].id === id,
-    })),
-  });
-  const pieceColor = (slot: Slot, title = l('color')): ColorGroup => ({
-    title,
-    colors: CLOTH_COLORS,
-    get: (a) => a.roupas[slot].cor,
-    set: (a, c) => (a.roupas[slot].cor = c),
-    visible: (a) => !!a.roupas[slot].id,
+    options: [
+      ...(none ? [{ value: '', label: l('none'), apply: (a: Appearance) => wear(a, none, '', sex), selected: (a: Appearance) => !itemIn(a, none) }] : []),
+      ...items.map((i) => ({ value: i.id, label: nameOf(i), apply: applyItem(i), selected: isWorn(i) })),
+    ],
   });
 
+  /** Swatches for each channel of the item stored in a slot (only the palette colors that slot allows). */
+  const slotColors = (slot: Slot): ColorGroup[] => {
+    const c = look.itens[slot];
+    const it = c && catalogItem(c.id);
+    if (!it) return [];
+    return it.channels.map((ch: Channel, i) => ({
+      title: `${l(slot)} · ${l(ch)}`,
+      colors: allowedColors(slot, i),
+      get: (a) => a.itens[slot]?.cores[i] ?? '',
+      set: (a, color) => {
+        const cur = a.itens[slot];
+        if (cur) cur.cores[i] = color;
+      },
+    }));
+  };
+
+  /** One section of cards per slot used by a category (accessories, tactical gear, headwear). */
+  const bySlot = (category: Category): Group[] => {
+    const items = catalogOf(category);
+    const slots = [...new Set(items.map((i) => i.slots[0]))];
+    return slots.flatMap((slot) => [itemCards(l(slot), items.filter((i) => i.slots[0] === slot), focusOf(slot), slot), ...slotColors(slot)]);
+  };
+
+  /** Cards for one feature of the face (shape, brows, nose, mouth, ears, marks), framed on the head. */
+  const faceCards = <K extends keyof Face>(title: string, key: K, values: readonly Face[K][]): CardGroup => ({
+    title: l(title),
+    focus: 'head',
+    options: values.map((v) => ({ value: v, label: l(`${key}.${v}`), apply: (a: Appearance) => (a.rosto = { ...a.rosto, [key]: v }), selected: (a: Appearance) => a.rosto[key] === v })),
+  });
+
+  const searchResults = (q: string): Group[] => {
+    const n = norm(q);
+    const items = CATALOG.filter((i) => i.ready && (norm(i.name.pt).includes(n) || norm(i.name.en).includes(n)));
+    // One section per category, framed on the part of the body it dresses.
+    const titles: Record<Category, string> = { cabelo: l('hairStyle'), barba: l('beard'), camiseta: l('camiseta'), blusa: l('blusa'), jaqueta: l('jaqueta'), calca: l('calca'), short: l('short'), calcado: l('calcado'), cabeca: l('tabHead'), acessorio: l('tabAcc'), tatico: l('tabTactical') };
+    const cats = [...new Set(items.map((i) => i.category))];
+    return cats.map((c) => {
+      const list = items.filter((i) => i.category === c);
+      const focus: Focus = c === 'cabelo' || c === 'barba' ? 'head' : focusOf(list[0].slots[0]);
+      return itemCards(titles[c], list, focus);
+    });
+  };
+
   const groups = (): Group[] => {
+    if (query.trim()) return searchResults(query);
+    const nonEmpty = (gs: Group[]) => gs.filter((g) => !('options' in g) || g.options.some((op) => op.value));
     switch (tab) {
       case 'body':
         return [
           { title: l('height'), focus: 'full', options: HEIGHTS.map((v) => ({ value: v, label: l(v), apply: (a) => (a.altura = v), selected: (a) => a.altura === v })) },
           { title: l('build'), focus: 'full', options: BUILDS.map((v) => ({ value: v, label: l(v), apply: (a) => (a.biotipo = v), selected: (a) => a.biotipo === v })) },
-          { title: l('skin'), colors: SKIN_TONES, get: (a) => a.pele, set: (a, c) => (a.pele = c) },
+          { title: l('skin'), colors: SKIN_COLORS, get: (a) => a.pele, set: (a, c) => (a.pele = c) },
         ];
       case 'hair':
         return [
-          { title: l('hairStyle'), focus: 'head', options: HAIR[sex].map((v) => ({ value: v, label: l(v), apply: (a) => (a.cabelo.id = v), selected: (a) => a.cabelo.id === v })) },
+          itemCards(l('hairStyle'), catalogOf('cabelo').filter((i) => HAIR_STYLES.includes(i.id)), 'head'),
           { title: l('hairColor'), colors: HAIR_COLORS, get: (a) => a.cabelo.cor, set: (a, c) => (a.cabelo.cor = c) },
+          {
+            title: l('beard'),
+            focus: 'head',
+            options: BEARDS.map((v) => ({ value: v, label: v ? nameOf(catalogItem(v)!) : l('none'), apply: (a: Appearance) => (a.barba = v), selected: (a: Appearance) => a.barba === v })),
+          },
+          faceCards('faceShape', 'formato', FACE_SHAPES),
+          { title: l('eyeStyle'), focus: 'head', options: EYE_STYLES.map((v) => ({ value: v, label: l(v), apply: (a) => (a.olhosEstilo = v), selected: (a) => a.olhosEstilo === v })) },
           { title: l('eyeColor'), colors: EYE_COLORS, get: (a) => a.olhos, set: (a, c) => (a.olhos = c) },
+          faceCards('brows', 'sobrancelhas', BROW_STYLES),
+          faceCards('nose', 'nariz', NOSE_STYLES),
+          faceCards('mouth', 'boca', MOUTH_STYLES),
+          faceCards('ears', 'orelhas', EAR_STYLES),
+          faceCards('marks', 'marcas', FACE_MARKS),
         ];
       case 'top':
-        return [pieceCards('camiseta', 'torso', l('camiseta')), pieceColor('camiseta')];
+        return nonEmpty([
+          itemCards(l('camiseta'), catalogOf('camiseta'), 'torso'),
+          itemCards(l('blusa'), catalogOf('blusa'), 'torso'),
+          ...slotColors('tronco'),
+          itemCards(l('jaqueta'), catalogOf('jaqueta'), 'torso', 'sobreposicao'),
+          ...slotColors('sobreposicao'),
+        ]);
       case 'bottom':
-        return [
-          pieceCards('baixo', 'legs', l('pants'), (id) => id.startsWith('calca')),
-          pieceCards('baixo', 'legs', l('shorts'), (id) => id.startsWith('bermuda')),
-          pieceCards('baixo', 'legs', l('skirts'), (id) => id.startsWith('saia')),
-          pieceColor('baixo'),
-        ];
+        return nonEmpty([
+          itemCards(l('calca'), catalogOf('calca'), 'legs'),
+          itemCards(l('short'), catalogOf('short').filter((i) => !i.id.startsWith('saia')), 'legs'),
+          itemCards(l('saia'), catalogOf('short').filter((i) => i.id.startsWith('saia')), 'legs'),
+          ...slotColors('baixo'),
+        ]);
       case 'shoes':
-        return [pieceCards('sapatos', 'feet', l('sapatos')), pieceColor('sapatos')];
+        return nonEmpty([itemCards(l('calcado'), catalogOf('calcado'), 'feet'), ...slotColors('calcado')]);
+      case 'head':
+        return bySlot('cabeca');
       case 'acc':
-        return [
-          pieceCards('chapeu', 'head', l('chapeu')),
-          pieceColor('chapeu', `${l('color')}: ${l('chapeu')}`),
-          pieceCards('oculos', 'head', l('oculos')),
-          pieceColor('oculos', `${l('color')}: ${l('oculos')}`),
-          pieceCards('pulseira', 'torso', l('pulseira')),
-          pieceColor('pulseira', `${l('color')}: ${l('pulseira')}`),
-        ];
+        return bySlot('acessorio');
+      case 'tactical':
+        return bySlot('tatico');
       case 'pcd':
         return [
           { title: l('arm'), focus: 'torso', options: ARM_LOSSES.map((v) => ({ value: v, label: l(v || 'complete'), apply: (a) => (a.pcd.braco = v), selected: (a) => a.pcd.braco === v })) },
@@ -471,11 +665,7 @@ export function showCustomizer(root: HTMLElement, o: Options) {
         g.options.forEach((op, oi) => content.querySelector(`.cz-card[data-g="${gi}"][data-o="${oi}"]`)?.setAttribute('aria-pressed', String(op.selected(look))));
         return;
       }
-      const sec = content.querySelector<HTMLElement>(`.cz-colors[data-g="${gi}"]`);
-      if (!sec) return;
-      sec.classList.toggle('hidden', !!g.visible && !g.visible(look));
-      sec.querySelectorAll<HTMLElement>('.swatch').forEach((s) => s.setAttribute('aria-pressed', String(s.dataset.c === g.get(look))));
-      sec.querySelector<HTMLInputElement>('input[type=color]')!.value = g.get(look);
+      content.querySelectorAll<HTMLElement>(`.cz-colors[data-g="${gi}"] .swatch`).forEach((s) => s.setAttribute('aria-pressed', String(s.dataset.c === g.get(look))));
     });
   };
 
@@ -492,23 +682,30 @@ export function showCustomizer(root: HTMLElement, o: Options) {
     }, 200);
   };
 
+  /** Rebuilds the panel (an item change may add or remove color channels), keeping the scroll. */
   const renderContent = () => {
+    const scroll = content.scrollTop;
     thumbs.clearQueue();
     current = groups();
+    const cards = current.filter((g) => 'options' in g) as CardGroup[];
     content.innerHTML =
-      (tab === 'pcd' ? `<p class="hint cz-pcd-hint">${l('pcdHint')}</p>` : '') +
+      (tab === 'pcd' && !query.trim() ? `<p class="hint cz-pcd-hint">${l('pcdHint')}</p>` : '') +
+      (query.trim() && !cards.some((g) => g.options.length) ? `<p class="hint">${l('noResults')}</p>` : '') +
+      (!query.trim() && !current.length ? `<p class="hint">${l('soon')}</p>` : '') +
       current
         .map((g, gi) =>
           'options' in g
-            ? `<section><h4>${esc(g.title)}</h4><div class="cz-grid">${g.options
-                .map(
-                  (op, oi) =>
-                    `<button type="button" class="cz-card" data-g="${gi}" data-o="${oi}" aria-pressed="${op.selected(look)}"><span class="cz-thumb"><img alt="" /></span><span class="cz-label">${esc(op.label)}</span></button>`,
-                )
-                .join('')}</div></section>`
-            : `<section class="cz-colors ${g.visible && !g.visible(look) ? 'hidden' : ''}" data-g="${gi}"><h4>${esc(g.title)}</h4><div class="swatches">${g.colors
+            ? g.options.length
+              ? `<section><h4>${esc(g.title)}</h4><div class="cz-grid">${g.options
+                  .map(
+                    (op, oi) =>
+                      `<button type="button" class="cz-card" data-g="${gi}" data-o="${oi}" aria-pressed="${op.selected(look)}"><span class="cz-thumb"><img alt="" /></span><span class="cz-label">${esc(op.label)}</span></button>`,
+                  )
+                  .join('')}</div></section>`
+              : ''
+            : `<section class="cz-colors" data-g="${gi}"><h4>${esc(g.title)}</h4><div class="swatches">${g.colors
                 .map((c) => `<button type="button" class="swatch" data-c="${c}" style="background:${c}" aria-pressed="${c === g.get(look)}" title="${c}"></button>`)
-                .join('')}<input type="color" value="${g.get(look)}" /></div></section>`,
+                .join('')}</div></section>`,
         )
         .join('');
     content.querySelectorAll<HTMLButtonElement>('.cz-card').forEach((btn) => {
@@ -517,6 +714,7 @@ export function showCustomizer(root: HTMLElement, o: Options) {
         g.options[Number(btn.dataset.o)].apply(look);
         stage.focus(g.focus);
         changed();
+        renderContent();
       };
     });
     content.querySelectorAll<HTMLElement>('.cz-colors').forEach((sec) => {
@@ -527,17 +725,14 @@ export function showCustomizer(root: HTMLElement, o: Options) {
           changed();
         };
       });
-      const picker = sec.querySelector<HTMLInputElement>('input[type=color]')!;
-      picker.oninput = () => {
-        g.set(look, picker.value);
-        changed();
-      };
     });
     loadThumbs();
+    content.scrollTop = scroll;
   };
 
   const selectTab = (t: Tab) => {
     tab = t;
+    query = search.value = '';
     root.querySelectorAll<HTMLElement>('.cz-tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
     stage.focus(TABS.find((x) => x.id === t)!.focus);
     renderContent();
@@ -554,6 +749,45 @@ export function showCustomizer(root: HTMLElement, o: Options) {
 
   root.querySelectorAll<HTMLButtonElement>('.cz-tabs button').forEach((b) => (b.onclick = () => selectTab(b.dataset.tab as Tab)));
   root.querySelector<HTMLButtonElement>('#cz-cancel')!.onclick = () => close(false);
+  root.querySelectorAll<HTMLButtonElement>('.cz-anims button').forEach((b) => {
+    b.onclick = () => {
+      stage.play(b.dataset.anim as Anim);
+      root.querySelectorAll('.cz-anims button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    };
+  });
+  root.querySelector<HTMLButtonElement>('#cz-random')!.onclick = () => {
+    look = randomAppearance(sex);
+    stage.show(look, sex);
+    effects.textContent = effectsText(look);
+    renderContent();
+  };
+  // The whole look as the character system's config (what a GLB pipeline or a tool would consume).
+  root.querySelector<HTMLButtonElement>('#cz-json')!.onclick = async () => {
+    const json = JSON.stringify(appearanceToConfig(look, sex), null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      o.setStatus(l('copied'));
+    } catch {
+      console.log(json);
+      o.setStatus(l('copied'));
+    }
+  };
+  // Exports the live character (skeleton, skin weights, morphs, masks) as a GLB, in rest pose.
+  root.querySelector<HTMLButtonElement>('#cz-glb')!.onclick = async () => {
+    const holder = new THREE.Scene();
+    const a = new Avatar(holder, look, sex, { bake: false });
+    a.visible = true;
+    a.character.skeleton.pose();
+    const glb = (await new GLTFExporter().parseAsync(a.root, { binary: true })) as ArrayBuffer;
+    a.dispose();
+    const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'personagem.glb';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    o.setStatus(l('exported'));
+  };
   root.querySelector<HTMLButtonElement>('#cz-reset')!.onclick = () => {
     look = defaultAppearance(sex);
     stage.show(look, sex);

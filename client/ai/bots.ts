@@ -155,6 +155,7 @@ export class BotManager {
       dealt = before - left;
     } else {
       const bot = victim as Bot;
+      if (attacker !== bot) bot.hitReact(attacker.position);
       dealt = Math.min(bot.health, amount);
       bot.health -= dealt;
       bot.lastDamageAt = this.time;
@@ -219,6 +220,7 @@ export class BotManager {
     const dir = applySpread(aim, spread, new THREE.Vector3());
     const { hit, through, keep, end } = traceShot(this.o.physics, this.o.registry, eye, dir, RIFLE.alcanceMaximo, bot.rig.body, RIFLE.penetracao);
     const muzzle = bot.muzzle(new THREE.Vector3());
+    bot.fired();
     const listener = this.o.listener();
     const dist = listener.distanceTo(muzzle);
     this.o.sfx.gunshot(Math.min(0.8, 10 / (dist + 6)));

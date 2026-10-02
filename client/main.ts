@@ -14,7 +14,9 @@ import { Input } from './core/input';
 import { loadSettings, saveSettings } from './core/settings';
 import { createRenderContext } from './render/renderer';
 import { Effects } from './render/effects';
-import { Viewmodel } from './render/viewmodel';
+import { Viewmodel, VM_FEEL } from './render/viewmodel';
+import { ANIM } from './character/animator';
+import { TuningPanel } from './ui/tuning';
 import { QualityManager } from './render/quality';
 import { createPhysics } from './world/physics';
 import { buildBlockoutMap, type SpawnPoint } from './world/blockoutMap';
@@ -36,8 +38,8 @@ import { RemoteWorld, type RemotePlayer } from './net/remote';
 import { NavMap } from './ai/navmesh';
 import { Bot, type Combatant } from './ai/bot';
 import { BotManager } from './ai/bots';
-import { CharacterRig } from './entities/rig';
-import { isBehind, refineRegion } from './entities/hitboxes';
+import { CharacterRig, type HitPose } from './entities/rig';
+import { isBehind } from './entities/hitboxes';
 import { Corpse } from './gameplay/corpse';
 import { Sfx } from './audio/sfx';
 import { Hud, type FeedIcon } from './ui/hud';
@@ -123,14 +125,14 @@ async function boot() {
   player.netControlled = !!online;
   if (online) player.respawnDelay = NET.respawnDelay + 0.3;
   if (botMode) player.respawnDelay = 5;
-  // The character from the profile (default look without an account) and what it does in the game:
-  // max health (build), eye height and hitboxes (height), reload (no hand/arm) and speed (no leg).
+  // The character from the profile (default look without an account) and what it does in the game: only
+  // the PCD mode (reload without a hand/arm, speed without a leg, no hitbox on the missing limb). Height and
+  // build are looks: the eye, the hitboxes and the health are the same for everyone (style guide).
   const look = choice.account?.aparencia ?? defaultAppearance(choice.sex);
   const body = bodyStats(look);
   player.maxHealth = body.maxHealth;
   player.health = body.maxHealth;
-  player.eyeScale = body.scale;
-  viewmodel.setBody(look);
+  viewmodel.setBody(look, choice.sex);
   const avatar = new Avatar(ctx.scene, look, choice.sex);
   const melee = new Melee(knifeData(progress.equipped('faca')));
   const grenadeData = GRENADES.granada_frag;
@@ -168,10 +170,10 @@ async function boot() {
       return player.yaw;
     },
     eye: (out) => player.eye(1, out),
-    refineRegion: (pt, r) => refineRegion(pt, r, playerFeet(playerPos), player.yaw, body.scale),
+    refineRegion: (pt, r) => playerRig?.refineRegion(pt, r) ?? r,
     isBehind: (pt) => isBehind(pt, playerFeet(playerPos), player.yaw),
   };
-  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry, body) : null;
+  const playerRig = botMode ? new CharacterRig(physics.world, playerTarget, registry, body.missing) : null;
   if (playerRig) player.mb.ignoreBody = playerRig.body;
 
   /** Everything that can currently be shot / stabbed / blown up. */
@@ -414,7 +416,7 @@ async function boot() {
     }
     // One-hit kill, as in the original.
     const dummy = target as Dummy;
-    const res = dummy.applyHit(melee.data.letal ? LETHAL_DAMAGE : 55, 'tronco', simTime, tmp, 'back');
+    const res = dummy.applyHit(melee.data.letal ? LETHAL_DAMAGE : 55, 'peito', simTime, tmp, 'back');
     if (res.damage <= 0) return;
     hud.hit(res.killed ? 'kill' : 'hit');
     if (res.killed) {
@@ -557,7 +559,7 @@ async function boot() {
       const dmg = clampExplosionDamage(grenadeLvl, explosionDamage(grenadeLvl, dist), d.health);
       if (dmg <= 0) continue;
       const away = new THREE.Vector3(p.x - center.x, 0, p.z - center.z).normalize();
-      const res = d.applyHit(dmg, 'tronco', simTime, away, 'back');
+      const res = d.applyHit(dmg, 'peito', simTime, away, 'back');
       if (res.damage <= 0) continue;
       anyHit = true;
       effects.burst('confetti', tmp.copy(p).setY(p.y + 1.1), UP, 6);
@@ -734,6 +736,7 @@ async function boot() {
       const rp = net.players.get(m.id);
       if (!rp) return;
       const from = rp.muzzle(new THREE.Vector3());
+      rp.fire();
       effects.tracer(from, new THREE.Vector3(...m.e));
       player.eye(1, eye);
       sfx.gunshot(Math.min(0.8, 10 / (eye.distanceTo(from) + 6)));
@@ -743,7 +746,10 @@ async function boot() {
       player.eye(1, eye);
       if (rp && rp.position.distanceTo(eye) < 12) sfx.knifeSwing();
     });
+    conn.on('playerLoadout', (m) => net.setLoadout(m.id, m.lo));
     conn.on('grenade', (m) => {
+      // The thrower's arm swings on their avatar.
+      if (!m.mine) net.players.get(m.owner)?.throwGrenade();
       if (m.mine) mines.place(m.id, m.owner, new THREE.Vector3(...m.p));
       else grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact });
     });
@@ -753,7 +759,11 @@ async function boot() {
       explosionFx(new THREE.Vector3(...m.p));
     });
     conn.on('damage', (m) => {
-      if (m.target !== me) return;
+      if (m.target !== me) {
+        // Someone else was hit: their torso jerks along the bullet's path.
+        if (m.from) net.players.get(m.target)?.hitReact(new THREE.Vector3(...m.from));
+        return;
+      }
       player.health = m.health;
       player.lastDamageAt = simTime;
       hud.damageFlash(m.amount);
@@ -1016,7 +1026,29 @@ async function boot() {
 
     for (const ex of grenades.fixedUpdate(dt)) explode(ex.position, ex.id);
     bots?.fixedUpdate(dt, simTime);
-    if (playerRig) playerRig.follow(playerFeet(feet), player.yaw, player.move.crouched, !player.dead);
+    if (playerRig) {
+      // The hitboxes take the pose the others see (crouch, aim, reload...).
+      const pose: HitPose = taunt.active
+        ? { kind: 'dance', t: taunt.t }
+        : {
+            kind: 'armed',
+            pose: {
+              speed: player.horizontalSpeed,
+              vel: { x: player.move.vel.x, z: player.move.vel.z },
+              yaw: player.yaw,
+              grounded: player.move.grounded,
+              sprint: player.move.sprinting,
+              crouch: player.move.crouched,
+              slide: player.move.sliding,
+              pitch: player.pitch,
+              ads: weapon.ads > 0.5,
+              reload: weapon.reloading,
+              knife: melee.swinging,
+              cook: thrower.cookT !== null,
+            },
+          };
+      playerRig.follow(playerFeet(feet), player.yaw, !player.dead, pose, dt);
+    }
     dummies.fixedUpdate(dt, simTime, (spot) => {
       const tr = player.mb.body.translation();
       return !player.dead && Math.hypot(tr.x - spot.x, tr.z - spot.z) < 0.9 && Math.abs(player.feet - spot.y) < 1.8;
@@ -1046,7 +1078,22 @@ async function boot() {
 
   // --- Render frame ---------------------------------------------------------------------------------
   let showDebug = false;
-  let showHitboxes = false;
+  // F4 cycles: characters' hitboxes → characters + map colliders (and the bots' navmesh) → off.
+  type DebugView = 'off' | 'chars' | 'all';
+  let debugView: DebugView = 'off';
+  const worldDebug = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8 }));
+  worldDebug.frustumCulled = false;
+  worldDebug.visible = false;
+  ctx.scene.add(worldDebug);
+  let worldDebugAge = Infinity;
+  /** Map colliders from Rapier's debug renderer (character hitboxes excluded: they have their own view). */
+  const refreshWorldDebug = () => {
+    const { vertices, colors } = physics.world.debugRender(undefined, (c) => ((c.collisionGroups() >>> 16) & GROUP.HITBOX) === 0);
+    worldDebug.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    worldDebug.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    worldDebug.geometry.computeBoundingSphere();
+    worldDebugAge = 0;
+  };
   let hudTimer = 0;
   let fpsAvg = 60;
   let sprintVis = 0;
@@ -1066,19 +1113,31 @@ async function boot() {
 
   let simMsAvg = 0;
   let renderMsAvg = 0;
+  const tuning = new TuningPanel({ 'Primeira pessoa (VM_FEEL)': VM_FEEL, 'Terceira pessoa (ANIM)': ANIM }, (section) => {
+    if (section.startsWith('Primeira')) viewmodel.retune();
+  });
   const render = (alpha: number, frameDt: number) => {
     const tRender = performance.now();
     renderTime += frameDt;
     const [mdx, mdy] = input.takeMouse();
     if (input.consume('debug')) showDebug = !showDebug;
+    // F6: live tuning of the first- and third-person feel. It stays open while playing (Esc frees the mouse
+    // to move the sliders; click the game to go back and feel the change).
+    if (input.consume('tuning')) tuning.toggle();
     if (input.consume('hitboxes')) {
-      showHitboxes = !showHitboxes;
-      dummies.setDebug(showHitboxes);
-      net?.setDebug(showHitboxes);
-      bots?.setDebug(showHitboxes);
+      debugView = debugView === 'off' ? 'chars' : debugView === 'chars' ? 'all' : 'off';
+      const chars = debugView !== 'off';
+      dummies.setDebug(chars);
+      net?.setDebug(chars);
+      bots?.setDebug(chars);
       const navDebug = (window as unknown as { __ocNavDebug?: THREE.Object3D }).__ocNavDebug;
-      if (navDebug) navDebug.visible = showHitboxes;
+      if (navDebug) navDebug.visible = debugView === 'all';
+      worldDebug.visible = debugView === 'all';
+      if (worldDebug.visible) refreshWorldDebug();
+      hud.notice(t(debugView === 'chars' ? 'debugViewChars' : debugView === 'all' ? 'debugViewAll' : 'debugViewOff'));
     }
+    // Moving colliders (doors, props) keep the overlay current, a few times per second.
+    if (worldDebug.visible && (worldDebugAge += frameDt) > 0.2) refreshWorldDebug();
 
     // Mouse look is applied per render frame for minimum latency; ADS scales by the zoom.
     if (input.locked && !player.dead && !taunt.active) {
@@ -1191,6 +1250,8 @@ async function boot() {
       crouch: player.move.crouchT,
     });
 
+    // Animation LOD: far or off-screen characters pose less often.
+    Avatar.setCamera(ctx.camera);
     dummies.render(alpha, frameDt, simTime);
     bots?.render(alpha, frameDt);
     net?.render(frameDt);

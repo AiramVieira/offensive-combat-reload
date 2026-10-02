@@ -18,8 +18,8 @@ import { MELEE, WEAPONS, type HitRegion } from '@shared/weapons';
 import type { Sex } from '@shared/protocol';
 import { bodyStats, randomAppearance, type Appearance, type BodyStats } from '@shared/appearance';
 import { Avatar } from '../entities/avatar';
-import { isBehind, refineRegion } from '../entities/hitboxes';
-import { CharacterRig } from '../entities/rig';
+import { isBehind } from '../entities/hitboxes';
+import { CharacterRig, type HitPose } from '../entities/rig';
 import type { HitboxRegistry, Target } from '../gameplay/targets';
 import type { Corpse } from '../gameplay/corpse';
 import { Weapon } from '../weapons/weapon';
@@ -182,7 +182,7 @@ export class Bot implements Combatant {
     const collider = world.createCollider(RAPIER.ColliderDesc.cylinder(HALF_STAND, MOVE.radius).setCollisionGroups(PLAYER_GROUPS), body);
     const controller = world.createCharacterController(CONTROLLER_OFFSET);
     configureController(controller);
-    this.rig = new CharacterRig(world, this, registry, this.bodyStats);
+    this.rig = new CharacterRig(world, this, registry, this.bodyStats.missing);
     this.mb = { world, body, collider, controller, ignoreBody: this.rig.body };
     this.weapon = new Weapon(WEAPONS.rifle_padrao, {
       shoot: (spread) => this.onShoot?.(spread),
@@ -193,7 +193,7 @@ export class Bot implements Combatant {
     this.weapon.reloadMul = this.bodyStats.reloadMul;
     this.avatar = new Avatar(scene, this.look, sex);
     this.plate = nameplate(name);
-    this.plate.position.y *= this.bodyStats.scale;
+    this.plate.position.y *= this.bodyStats.visualScale;
     this.avatar.root.add(this.plate, this.rig.debug);
   }
 
@@ -209,11 +209,11 @@ export class Bot implements Combatant {
   }
 
   eye(out: THREE.Vector3): THREE.Vector3 {
-    return out.set(this.curr.x, this.curr.y + eyeHeight(this.move) * this.bodyStats.scale, this.curr.z);
+    return out.set(this.curr.x, this.curr.y + eyeHeight(this.move), this.curr.z);
   }
 
   refineRegion(point: THREE.Vector3, region: HitRegion): HitRegion {
-    return refineRegion(point, region, this.curr, this.yaw, this.bodyStats.scale);
+    return this.rig.refineRegion(point, region);
   }
 
   isBehind(point: THREE.Vector3): boolean {
@@ -221,7 +221,7 @@ export class Bot implements Combatant {
   }
 
   setDebug(v: boolean) {
-    this.rig.debug.visible = v;
+    this.rig.setDebug(v);
   }
 
   /** Spawn-protection blink (visibility of the body only). */
@@ -260,7 +260,7 @@ export class Bot implements Combatant {
     if (this.tauntCorpse && this.tauntCorpse.claimedBy === this.id) this.tauntCorpse.claimedBy = null;
     this.tauntCorpse = null;
     this.mode = 'roam';
-    this.rig.follow(this.curr, this.yaw, false, false);
+    this.rig.follow(this.curr, this.yaw, false, this.currentPose(), 0);
     this.avatar.visible = false;
   }
 
@@ -549,7 +549,7 @@ export class Bot implements Combatant {
     const tr = this.mb.body.nextTranslation();
     const half = this.move.crouched ? this.mb.collider.halfHeight() : HALF_STAND;
     this.curr.set(tr.x, tr.y - half, tr.z);
-    this.rig.follow(this.curr, this.yaw, this.move.crouched, true);
+    this.rig.follow(this.curr, this.yaw, true, this.currentPose(), dt);
 
     // Trigger: after the reaction delay, when on target, in bursts.
     let fire = false;
@@ -582,10 +582,22 @@ export class Bot implements Combatant {
     if (this.dead) return;
     this.avatar.root.position.lerpVectors(this.prev, this.curr, alpha);
     this.avatar.root.rotation.y = this.yaw;
-    if (this.mode === 'taunt') this.avatar.dance(this.tauntT);
-    else
-      this.avatar.pose(dt, {
+    const pose = this.currentPose();
+    if (pose.kind === 'dance') this.avatar.dance(pose.t);
+    else if (pose.kind === 'armed') this.avatar.pose(dt, pose.pose);
+  }
+
+  /** What the body is doing: the avatar plays it and the hitboxes follow it. */
+  private currentPose(): HitPose {
+    if (this.mode === 'taunt') return { kind: 'dance', t: this.tauntT };
+    return {
+      kind: 'armed',
+      pose: {
         speed: Math.hypot(this.move.vel.x, this.move.vel.z),
+        vel: { x: this.move.vel.x, z: this.move.vel.z },
+        yaw: this.yaw,
+        grounded: this.move.grounded,
+        sprint: this.move.sprinting,
         crouch: this.move.crouched,
         slide: this.move.sliding,
         pitch: this.pitch,
@@ -593,7 +605,18 @@ export class Bot implements Combatant {
         reload: this.weapon.reloading,
         knife: this.knifeAnim > 0,
         cook: false,
-      });
+      },
+    };
+  }
+
+  /** A shot: recoil on the avatar. */
+  fired() {
+    this.avatar.fire();
+  }
+
+  /** Hit by a bullet from `from`: the torso jerks. */
+  hitReact(from: THREE.Vector3) {
+    this.avatar.hitReact(from);
   }
 
   /** Approximate muzzle position (tracers). */
