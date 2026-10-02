@@ -192,6 +192,7 @@ export class Bot implements Combatant {
     });
     this.weapon.reloadMul = this.bodyStats.reloadMul;
     this.avatar = new Avatar(scene, this.look, sex);
+    this.avatar.followHitboxes(this.rig.animator);
     this.plate = nameplate(name);
     this.plate.position.y *= this.bodyStats.visualScale;
     this.avatar.root.add(this.plate, this.rig.debug);

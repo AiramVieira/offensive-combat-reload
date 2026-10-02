@@ -48,7 +48,8 @@ export class CharacterRig {
   private q = new THREE.Quaternion();
   /** The standard skeleton the hitboxes ride on. */
   private poser: Posable & { holder: THREE.Group };
-  private animator: CharacterAnimator;
+  /** Plays the pose on the tick; the visible character follows it (Avatar.followHitboxes). */
+  readonly animator: CharacterAnimator;
   private feet = new THREE.Vector3();
   private yaw = 0;
   private groinDebug: THREE.Mesh;

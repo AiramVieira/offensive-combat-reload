@@ -51,6 +51,8 @@ export class Avatar {
   readonly character: Character;
   readonly root: THREE.Group;
   private animator: CharacterAnimator;
+  /** The animator of this character's hitboxes, once the avatar follows them (followHitboxes). */
+  private hitboxes: CharacterAnimator | null = null;
   private lodFrame = 0;
   private lodDt = 0;
   /** The equipped levels' models in the hands (rifle in the hands and on the back, knife, grenade). */
@@ -138,9 +140,24 @@ export class Avatar {
     if (this.grenade) this.grenade.visible = grenade;
   }
 
+  /**
+   * Plays the pose of this character's hitbox skeleton (entities/rig.ts) instead of animating on a clock of
+   * its own. Two animators integrating the stride, the blends and the timers apart drift (frame steps vs
+   * ticks, the animation LOD dropping the time spent off-screen) until the hitbox legs walk out of step with
+   * the body you aim at. Shots, hits and throws go to that animator too, so they move the hitboxes as well.
+   */
+  followHitboxes(animator: CharacterAnimator) {
+    this.hitboxes = animator;
+  }
+
+  /** Where events go: the animator the pose comes from. */
+  private get clock(): CharacterAnimator {
+    return this.hitboxes ?? this.animator;
+  }
+
   /** A grenade thrown (the left arm swings it forward). */
   throwGrenade() {
-    this.animator.throwGrenade();
+    this.clock.throwGrenade();
   }
 
   set visible(v: boolean) {
@@ -162,13 +179,17 @@ export class Avatar {
     // Knife: the rifle goes on the back and the knife comes out in the hand.
     this.rifle(!s.knife);
     const step = this.lod(dt);
-    if (step !== null) this.animator.pose(step, s);
+    if (step !== null) {
+      // Following the hitboxes: their state as is and no time of its own, so the very same pose.
+      if (this.hitboxes) this.animator.syncFrom(this.hitboxes);
+      this.animator.pose(this.hitboxes ? 0 : step, s);
+    }
     this.showHeld(s.knife, this.animator.grenadeInHand);
   }
 
   /** A shot (recoil on the next poses). */
   fire() {
-    this.animator.fire();
+    this.clock.fire();
   }
 
   /** Hit by a bullet coming from `from` (world): the torso jerks along its path. */
@@ -176,7 +197,7 @@ export class Avatar {
     const dir = new THREE.Vector3().subVectors(this.root.position, from).setY(0);
     if (dir.lengthSq() < 1e-6) return;
     dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.root.rotation.y);
-    this.animator.hitReact(dir);
+    this.clock.hitReact(dir);
   }
 
   /** "Dancinha da Vitória". */
