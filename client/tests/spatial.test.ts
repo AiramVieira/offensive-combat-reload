@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { BodySounds, distanceGain, Enclosure, SPATIAL_KINDS, voiceParams, type CastFn, type Walker } from '../audio/spatial';
 
 const walker = (x: number, over: Partial<Walker> = {}): Walker => ({
