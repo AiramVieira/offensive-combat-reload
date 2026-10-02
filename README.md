@@ -148,6 +148,7 @@ docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, con
 - O controlador do Rapier não se move se começar um passo dentro de outro colisor; o jogador é **empurrado para fora** de personagens sobrepostos, e bonecos só renascem com o lugar livre.
 - Agachar fica só no **C**. `Ctrl` foi deixado de fora porque `Ctrl+W` fecha a aba do navegador fora do modo tela cheia.
 - Os sons são sintetizados enquanto não houver arquivos de áudio; cada função corresponde a uma entrada futura do banco de sons.
+- **Som espacial:** tiros, passos, recargas e faca dos outros jogadores e dos bots, granadas, minas e sons do mapa vêm do lugar onde acontecem. Atrás de uma parede, o som fica abafado e mais baixo (papel, vidro e madeira abafam menos). Ambientes fechados têm eco curto, e tiros ao ar livre ganham uma cauda longa. Os sons do próprio jogador continuam "na cabeça". Em Configurações → **Som**: *Automático* (3D no PC, estéreo no celular), *Fone (3D)* ou *Caixa de som (estéreo)*. Andar agachado não faz barulho de passos.
 
 ## Próximo passo (Fase 2)
 

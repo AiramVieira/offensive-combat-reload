@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { mergeColoredParts, toonGradient, type ColoredPart } from '../render/materials';
 import { WORLD_GROUPS, type Physics } from './physics';
+import type { SpatialSfx } from '../audio/spatial';
 
 // Not pure black: toon shading flattens near-black into a silhouette with no shape.
 const FUR = 0x35323c;
@@ -20,7 +21,7 @@ const BITE_TIME = 0.5;
 const LUNGE = 0.55;
 const LOOK_RANGE = 6;
 
-export interface DogSfx {
+export interface DogSfx extends SpatialSfx {
   bark(): void;
   bite(): void;
 }
@@ -162,12 +163,12 @@ export class ChowChow {
   private growl() {
     if (this.barkCooldown > 0) return;
     this.barkCooldown = 1.2;
-    this.sfx.bark();
+    this.sfx.at(this.spot, 'normal', (s) => s.bark());
   }
 
   /** Lunge at a victim standing at `at`. */
   bite(at: THREE.Vector3) {
-    this.sfx.bite();
+    this.sfx.at(this.spot, 'normal', (s) => s.bite());
     this.biteT = 0;
     this.biteDir.set(at.x - this.spot.x, 0, at.z - this.spot.z);
     if (this.biteDir.lengthSq() < 1e-4) this.biteDir.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));

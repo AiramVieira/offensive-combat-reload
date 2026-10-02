@@ -53,7 +53,6 @@ export interface BotOptions {
   sfx: Sfx;
   /** Local player as a combatant (id 0). */
   player: Combatant;
-  listener(): THREE.Vector3;
   count: number;
   skill: BotSkillName;
   hooks: BotHooks;
@@ -221,15 +220,13 @@ export class BotManager {
     const { hit, through, keep, end } = traceShot(this.o.physics, this.o.registry, eye, dir, RIFLE.alcanceMaximo, bot.rig.body, RIFLE.penetracao);
     const muzzle = bot.muzzle(new THREE.Vector3());
     bot.fired();
-    const listener = this.o.listener();
-    const dist = listener.distanceTo(muzzle);
-    this.o.sfx.gunshot(Math.min(0.8, 10 / (dist + 6)));
+    this.o.sfx.at(muzzle, 'gun', (s) => s.gunshot());
     if (Math.random() < 0.5) this.o.effects.tracer(muzzle, end);
     for (const p of through) {
       this.o.effects.decal(p.point, p.normal);
       this.o.effects.decal(p.exit, p.exitNormal);
       this.o.effects.burst('debris', p.exit, dir, 3, 0x9a6a3a);
-      if (dist < 30) this.o.sfx.impact(p.surface.material);
+      this.o.sfx.at(p.point, 'normal', (s) => s.impact(p.surface.material));
       p.surface.onShot?.(p.point);
     }
     if (!hit) return;
@@ -243,7 +240,8 @@ export class BotManager {
     } else {
       this.o.effects.decal(hit.point, hit.normal);
       this.o.effects.burst('debris', hit.point, hit.normal, 3, 0x9a8f80);
-      if (hit.surface && dist < 30) this.o.sfx.impact(hit.surface.material);
+      const surface = hit.surface;
+      if (surface) this.o.sfx.at(hit.point, 'normal', (s) => s.impact(surface.material));
       hit.surface?.onShot?.(hit.point);
     }
   }
@@ -252,7 +250,7 @@ export class BotManager {
     const d = Math.hypot(target.position.x - bot.position.x, target.position.z - bot.position.z);
     if (d > MELEE.faca.alcance + 0.4) return;
     const eye = bot.eye(new THREE.Vector3());
-    if (this.o.listener().distanceTo(eye) < 15) this.o.sfx.knifeHit();
+    this.o.sfx.at(eye, 'normal', (s) => s.knifeHit());
     this.o.effects.burst('star', target.position.clone().setY(target.position.y + 1.1), UP, 10);
     this.hit(target, bot, LETHAL_DAMAGE, { kind: 'knife', behind: target.isBehind(eye) });
   }

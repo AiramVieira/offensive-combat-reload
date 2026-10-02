@@ -848,7 +848,7 @@ export class Lanterns {
     return this.specs.length;
   }
 
-  finish(scene: THREE.Scene, b: MapBuilder, props: PropBus, onHit: () => void) {
+  finish(scene: THREE.Scene, b: MapBuilder, props: PropBus, onHit: (at: THREE.Vector3) => void) {
     const n = this.specs.length;
     this.ang = new Float32Array(n * 2);
     this.vel = new Float32Array(n * 2);
@@ -867,13 +867,14 @@ export class Lanterns {
     this.bodies.frustumCulled = this.strings.frustumCulled = false;
     scene.add(this.bodies, this.strings);
     this.specs.forEach(({ hook, drop }, i) => {
+      const at = new THREE.Vector3(hook.x, hook.y - drop, hook.z);
       const onShot = props.register(`lanterna:${i}`, () => {
         const a = Math.random() * Math.PI * 2;
         this.vel[i * 2] += Math.cos(a) * 2.6;
         this.vel[i * 2 + 1] += Math.sin(a) * 2.6;
-        onHit();
+        onHit(at);
       });
-      b.ballCollider(new THREE.Vector3(hook.x, hook.y - drop, hook.z), 0.32, 'paper', onShot);
+      b.ballCollider(at, 0.32, 'paper', onShot);
     });
     this.update(0);
   }

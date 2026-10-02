@@ -16,7 +16,7 @@ import { TouchControls } from './ui/touch';
 import { gamepad } from './core/gamepad';
 import { PadNav } from './ui/padNav';
 import { AimAssist } from './gameplay/aimAssist';
-import { loadSettings, saveSettings } from './core/settings';
+import { loadSettings, saveSettings, spatialMode } from './core/settings';
 import { createRenderContext } from './render/renderer';
 import { Effects } from './render/effects';
 import { Viewmodel, VM_FEEL } from './render/viewmodel';
@@ -47,6 +47,7 @@ import { CharacterRig, type HitPose } from './entities/rig';
 import { isBehind } from './entities/hitboxes';
 import { Corpse } from './gameplay/corpse';
 import { Sfx } from './audio/sfx';
+import { BodySounds, OCCLUSION_WEIGHT, type Vec, type Walker } from './audio/spatial';
 import { Hud, type FeedIcon } from './ui/hud';
 import { Screens } from './ui/menu';
 import { closeReason, showHome } from './ui/home';
@@ -146,12 +147,56 @@ async function boot() {
   const grenadeData = GRENADES.granada_frag;
   const grenadeLvl = grenadeLevel(grenadeData, GRENADE_LEVEL);
   const thrower = new GrenadeThrower(grenadeData);
-  const grenades = new GrenadeProjectiles(physics, ctx.scene, grenadeData, (s) => sfx.grenadeBounce(s));
+  const grenades = new GrenadeProjectiles(physics, ctx.scene, grenadeData, (s, at) => sfx.at(at, 'normal', (x) => x.grenadeBounce(s)));
   const taunt = new Taunt();
   const hud = new Hud();
   const scoreboard = new Scoreboard();
   const input = new Input(ctx.renderer.domElement);
   sfx.setVolume(settings.volume);
+  sfx.setSpatialMode(spatialMode(settings));
+  // The map's walls for the sound: room echo where it's enclosed, muffling behind walls (audio/spatial.ts).
+  const soundRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 1, z: 0 });
+  const soundCast = (o: Vec, d: Vec, max: number) => {
+    soundRay.origin = o;
+    soundRay.dir = d;
+    return physics.world.castRay(soundRay, max, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, WORLD_ONLY);
+  };
+  const occluder = (handle: number) => OCCLUSION_WEIGHT[physics.surfaces.get(handle)?.material ?? 'concrete'];
+  sfx.setWorld(
+    (o, d, max) => soundCast(o, d, max)?.timeOfImpact ?? null,
+    (from, to) => {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dz = to.z - from.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (len < 0.8) return 0;
+      // From the ears to the sound and back: the same collider both ways is one wall, two are two.
+      const a = soundCast(from, { x: dx / len, y: dy / len, z: dz / len }, len - 0.3);
+      if (!a) return 0;
+      const back = { x: to.x - (dx / len) * 0.25, y: to.y - (dy / len) * 0.25, z: to.z - (dz / len) * 0.25 };
+      const b = soundCast(back, { x: -dx / len, y: -dy / len, z: -dz / len }, len - 0.55);
+      const wa = occluder(a.collider.handle);
+      return !b || b.collider.handle === a.collider.handle ? wa : wa + occluder(b.collider.handle);
+    },
+  );
+  // Other people's footsteps, landings, slides and reloads, from what their bodies are doing.
+  const bodySounds = new BodySounds();
+  const groundProbe = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  const groundAt = (feet: Vec) => {
+    groundProbe.origin = { x: feet.x, y: feet.y + 0.1, z: feet.z };
+    const hit = physics.world.castRay(groundProbe, 0.5, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, WORLD_ONLY);
+    return (hit && physics.surfaces.get(hit.collider.handle)?.material) || 'concrete';
+  };
+  const playBody = (id: number, w: Walker, dt: number, reloadTime: () => number) => {
+    const f = w.feet;
+    for (const ev of bodySounds.update(id, w, dt)) {
+      const at = { x: f.x, y: f.y + 0.4, z: f.z };
+      if (ev.kind === 'step') sfx.at(at, 'step', (s) => s.footstep(groundAt(f), ev.loud * 2));
+      else if (ev.kind === 'land') sfx.at(at, 'step', (s) => s.land(ev.hard));
+      else if (ev.kind === 'slide') sfx.at(at, 'step', (s) => s.slide(groundAt(f)));
+      else sfx.at({ x: f.x, y: f.y + 1.2, z: f.z }, 'normal', (s) => s.reload(reloadTime(), false));
+    }
+  };
   // Phones and tablets: touch controls over the HUD; the pause button leaves to the menu.
   const touch = IS_MOBILE ? new TouchControls(input, settings, document.getElementById('hud')!) : null;
   gamepad.attach(input, settings);
@@ -311,7 +356,7 @@ async function boot() {
         effects.decal(p.exit, p.exitNormal);
         effects.burst('debris', p.point, p.normal, 3, 0x9a6a3a);
         effects.burst('debris', p.exit, shotDir, 5, 0x9a6a3a);
-        sfx.impact(p.surface.material);
+        sfx.at(p.point, 'normal', (s) => s.impact(p.surface.material));
         p.surface.onShot?.(p.point);
       }
       if (!hit) return;
@@ -366,9 +411,10 @@ async function boot() {
         effects.decal(hit.point, hit.normal);
         effects.burst('debris', hit.point, hit.normal, 5, 0x9a8f80);
         effects.burst('spark', hit.point, hit.normal, 3);
-        if (hit.surface) {
-          sfx.impact(hit.surface.material);
-          hit.surface.onShot?.(hit.point);
+        const surface = hit.surface;
+        if (surface) {
+          sfx.at(hit.point, 'normal', (s) => s.impact(surface.material));
+          surface.onShot?.(hit.point);
         }
       }
     },
@@ -551,7 +597,7 @@ async function boot() {
     effects.explosion(center, ground, grenadeLvl.raioDano);
     player.eye(1, eye);
     const listener = eye.distanceTo(center);
-    sfx.explosion(listener);
+    sfx.at(center, 'boom', (s) => s.explosion());
     shake = Math.min(1, shake + Math.max(0, 1 - listener / 18));
     return center;
   };
@@ -684,7 +730,6 @@ async function boot() {
       effects,
       sfx,
       player: playerTarget,
-      listener: () => ctx.camera.position,
       count: botMode.count,
       skill: botMode.skill,
       hooks: {
@@ -767,19 +812,22 @@ async function boot() {
       const from = rp.muzzle(new THREE.Vector3());
       rp.fire();
       effects.tracer(from, new THREE.Vector3(...m.e));
-      player.eye(1, eye);
-      sfx.gunshot(Math.min(0.8, 10 / (eye.distanceTo(from) + 6)));
+      sfx.at(from, 'gun', (s) => s.gunshot());
     });
     conn.on('swing', (m) => {
       const rp = net.players.get(m.id);
-      player.eye(1, eye);
-      if (rp && rp.position.distanceTo(eye) < 12) sfx.knifeSwing();
+      if (rp) sfx.at({ x: rp.position.x, y: rp.position.y + 1.3, z: rp.position.z }, 'step', (s) => s.knifeSwing());
     });
     conn.on('playerLoadout', (m) => net.setLoadout(m.id, m.lo));
     conn.on('grenade', (m) => {
       // The thrower's arm swings on their avatar.
-      if (!m.mine) net.players.get(m.owner)?.throwGrenade();
-      if (m.mine) mines.place(m.id, m.owner, new THREE.Vector3(...m.p));
+      const by = net.players.get(m.owner);
+      if (!m.mine) by?.throwGrenade();
+      if (!m.mine && by) sfx.at({ x: by.position.x, y: by.position.y + 1.4, z: by.position.z }, 'step', (s) => s.grenadeThrow());
+      if (m.mine) {
+        mines.place(m.id, m.owner, new THREE.Vector3(...m.p));
+        sfx.at({ x: m.p[0], y: m.p[1] + 0.2, z: m.p[2] }, 'normal', (s) => s.minePlant());
+      }
       else grenades.spawn(new THREE.Vector3(...m.p), new THREE.Vector3(...m.v), m.fuse, `${m.owner}:${m.id}`, 0, { impact: m.impact });
     });
     conn.on('boom', (m) => {
@@ -855,6 +903,7 @@ async function boot() {
   screens.bindSettings(settings, (s) => {
     saveSettings(s);
     sfx.setVolume(s.volume);
+    sfx.setSpatialMode(spatialMode(s));
     if (s.quality !== quality.current) quality.set(s.quality);
     touch?.layout();
   });
@@ -1156,6 +1205,8 @@ async function boot() {
   let renderTime = 0;
   const fpPos = new THREE.Vector3();
   const fpQuat = new THREE.Quaternion();
+  const earFwd = new THREE.Vector3();
+  const earUp = new THREE.Vector3();
   const tpPos = new THREE.Vector3();
   const tpQuat = new THREE.Quaternion();
   const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -1280,6 +1331,8 @@ async function boot() {
       cam.position.copy(fpPos);
       cam.quaternion.copy(fpQuat);
     }
+    // The ears follow the camera.
+    sfx.setListener(cam.position, earFwd.set(0, 0, -1).applyQuaternion(cam.quaternion), earUp.set(0, 1, 0).applyQuaternion(cam.quaternion), frameDt);
     avatar.visible = taunt.active && blend > 0.15;
 
     const zoom = 1 + (weapon.data.ads.zoom - 1) * weapon.ads;
@@ -1321,6 +1374,15 @@ async function boot() {
     dummies.render(alpha, frameDt, simTime);
     bots?.render(alpha, frameDt);
     net?.render(frameDt);
+    for (const b of bots?.bots ?? []) {
+      const m = b.move;
+      playBody(-b.id, { feet: b.position, alive: !b.dead, grounded: m.grounded, sprint: m.sprinting, crouch: m.crouched, slide: m.sliding, reload: b.weapon.reloading }, frameDt, () => b.weapon.reloadDuration);
+    }
+    for (const p of net?.players.values() ?? []) {
+      const f = p.flags;
+      const w = { feet: p.position, alive: p.alive, grounded: !!(f & FLAG.grounded), sprint: !!(f & FLAG.sprint), crouch: !!(f & FLAG.crouch), slide: !!(f & FLAG.slide), reload: !!(f & FLAG.reload) };
+      playBody(p.id, w, frameDt, () => rifleData((net?.info.get(p.id)?.lo ?? DEFAULT_LOADOUT).rifle).recarga.tatica);
+    }
     grenades.render(alpha);
     effects.update(frameDt);
     map.update(frameDt, mapFrame);

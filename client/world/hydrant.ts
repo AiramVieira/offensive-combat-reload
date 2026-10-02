@@ -1,6 +1,7 @@
 // Fire hydrant gag (section 10, "piadas ambientais"): shooting it bursts a water column for a few seconds,
 // and anyone standing on it gets launched into the air.
 import * as THREE from 'three';
+import type { SpatialSfx, Vec } from '../audio/spatial';
 
 const GUSH_TIME = 3;
 const FADE_TIME = 0.8;
@@ -10,8 +11,8 @@ const LAUNCH_SPEED = 15; // ≈ 5 m up
 const LAUNCH_SIDEWAYS = 2.5;
 const MAX_DROPS = 360;
 
-export interface HydrantSfx {
-  hiss(): { setVolume(v: number): void; stop(): void };
+export interface HydrantSfx extends SpatialSfx {
+  hiss(pos: Vec): { setVolume(v: number): void; stop(): void };
   splash(): void;
 }
 
@@ -122,16 +123,13 @@ export class Hydrant {
 
   /** Shot: burst (or keep gushing if it already is). */
   burst() {
-    if (this.t < 0) this.sfx.splash();
+    if (this.t < 0) this.sfx.at(this.top, 'normal', (s) => s.splash());
     this.t = this.t >= 0 && this.t < GUSH_TIME ? Math.min(this.t, 0.25) : 0;
-    this.hiss ??= this.sfx.hiss();
+    this.hiss ??= this.sfx.hiss(this.top);
   }
 
-  /**
-   * `feet` = local player's feet; `launch` throws them upward if they are standing in the column.
-   * `listener` sets the hiss volume by distance.
-   */
-  update(dt: number, feet: THREE.Vector3, listener: THREE.Vector3, launch: (vx: number, vy: number, vz: number) => void) {
+  /** `feet` = local player's feet; `launch` throws them upward if they are standing in the column. */
+  update(dt: number, feet: THREE.Vector3, launch: (vx: number, vy: number, vz: number) => void) {
     this.launchCooldown = Math.max(0, this.launchCooldown - dt);
     if (this.t < 0) return;
     this.t += dt;
@@ -151,7 +149,7 @@ export class Hydrant {
       this.drops.spawn(this.nozzle, Math.sqrt(2 * 16 * height), 1.1);
     }
 
-    this.hiss?.setVolume(k * Math.max(0.05, Math.min(1, 8 / (listener.distanceTo(this.top) + 3))));
+    this.hiss?.setVolume(k);
 
     // Standing on it, right against it, or falling back into the column: launched, with a random sideways
     // kick. (Counted from the hydrant's base: its top is too small to balance on.)
@@ -162,7 +160,7 @@ export class Hydrant {
       this.launchCooldown = 0.8;
       const a = Math.random() * Math.PI * 2;
       launch(Math.cos(a) * LAUNCH_SIDEWAYS, LAUNCH_SPEED, Math.sin(a) * LAUNCH_SIDEWAYS);
-      this.sfx.splash();
+      this.sfx.at(this.top, 'normal', (s) => s.splash());
     }
 
     if (this.t >= GUSH_TIME + FADE_TIME) {

@@ -1,8 +1,43 @@
 // Procedural placeholder sounds (section 13) on Web Audio mixing buses. No asset files needed for the prototype;
 // each function maps to a future sample bank entry (rifle_fire, dry_fire, rifle_reload, ...).
+//
+// Spatial sound: the player's own sounds play "in the head"; everything else plays from where it happens via
+// `at(position, kind, play)`, through a panner (HRTF on headphones, plain stereo on speakers and phones), a
+// low-pass for air and walls in between (occlusion, a ray cast against the map), and echo sends: a short room
+// reverb in enclosed spots, a long open-air tail for gunshots and explosions outside.
 import type { SurfaceMaterial } from '../world/physics';
+import { distanceGain, Enclosure, SPATIAL_KINDS, voiceParams, type CastFn, type SpatialKindName, type Vec } from './spatial';
 
 type Bus = 'sfx' | 'ui';
+/** 'hrtf' = 3D for headphones; 'stereo' = left/right only (speakers, lighter on phones). */
+export type SpatialMode = 'hrtf' | 'stereo';
+/** Occlusion between two points: 0 = clear, 1 per solid wall (thin materials count less). */
+export type OcclusionFn = (from: Vec, to: Vec) => number;
+
+/** Too many voices at once: lower-priority sounds (footsteps first) are dropped. */
+const MAX_VOICES = 36;
+const VOICE_LIFE = 1.2;
+
+/** A synthetic impulse response: decaying noise, darker as it fades; `slap` adds an early echo off far walls. */
+function impulse(ctx: AudioContext, seconds: number, decay: number, slap: number): AudioBuffer {
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      const k = 0.5 + 0.45 * t; // one-pole low-pass that closes over time
+      lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
+      d[i] = lp * Math.pow(1 - t, decay) * 2.2;
+    }
+    if (slap > 0) {
+      const at = Math.floor(ctx.sampleRate * (0.09 + c * 0.013));
+      for (let i = 0; i < 1800 && at + i < len; i++) d[at + i] += (Math.random() * 2 - 1) * slap * (1 - i / 1800);
+    }
+  }
+  return buf;
+}
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -11,6 +46,22 @@ export class Sfx {
   private noise!: AudioBuffer;
   private lowpass!: BiquadFilterNode;
   private volume = 0.7;
+  // Spatial.
+  private mode: SpatialMode = 'hrtf';
+  private spatialBus!: GainNode;
+  private roomIn!: GainNode;
+  private openIn!: GainNode;
+  /** The player's own sounds get the echo of where they stand. */
+  private selfRoom!: GainNode;
+  private selfOpen!: GainNode;
+  /** While a spatial sound is being built, its nodes connect here instead of to a bus. */
+  private route: AudioNode | null = null;
+  private ear = { x: 0, y: 0, z: 0 };
+  private voices: { end: number; priority: number }[] = [];
+  private loops = new Set<SpatialLoop>();
+  private occlusion: OcclusionFn | null = null;
+  private enclosure: Enclosure | null = null;
+  private earT = 0;
 
   /** Browsers only allow audio after a user gesture: call from the first click. */
   unlock() {
@@ -30,6 +81,22 @@ export class Sfx {
       this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      // Echo: a short room and a long, dark open-air tail, fed by sends from each sound.
+      this.spatialBus = ctx.createGain();
+      this.spatialBus.connect(this.master);
+      const room = ctx.createConvolver();
+      room.buffer = impulse(ctx, 0.9, 3.2, 0);
+      const open = ctx.createConvolver();
+      open.buffer = impulse(ctx, 1.9, 2.4, 0.5);
+      this.roomIn = ctx.createGain();
+      this.openIn = ctx.createGain();
+      this.roomIn.connect(room).connect(this.master);
+      this.openIn.connect(open).connect(this.master);
+      this.selfRoom = ctx.createGain();
+      this.selfOpen = ctx.createGain();
+      this.selfRoom.gain.value = this.selfOpen.gain.value = 0;
+      this.buses.sfx.connect(this.selfRoom).connect(this.roomIn);
+      this.buses.sfx.connect(this.selfOpen).connect(this.openIn);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
@@ -37,6 +104,152 @@ export class Sfx {
   setVolume(v: number) {
     this.volume = v;
     if (this.ctx) this.master.gain.value = v;
+  }
+
+  setSpatialMode(mode: SpatialMode) {
+    this.mode = mode;
+    for (const l of this.loops) l.panner.panningModel = mode === 'hrtf' ? 'HRTF' : 'equalpower';
+  }
+
+  /** The map's walls: `cast` for room echo, `occlusion` for sounds behind walls. Call again on a new map. */
+  setWorld(cast: CastFn | null, occlusion: OcclusionFn | null) {
+    this.enclosure = cast ? new Enclosure(cast) : null;
+    this.occlusion = occlusion;
+  }
+
+  /** Every frame: where the ears are (the camera) and where they face. */
+  setListener(pos: Vec, forward: Vec, up: Vec, dt: number) {
+    this.ear.x = pos.x;
+    this.ear.y = pos.y;
+    this.ear.z = pos.z;
+    if (!this.ready) return;
+    const ctx = this.ctx!;
+    const l = ctx.listener;
+    const t = ctx.currentTime;
+    if (l.positionX) {
+      l.positionX.setTargetAtTime(pos.x, t, 0.01);
+      l.positionY.setTargetAtTime(pos.y, t, 0.01);
+      l.positionZ.setTargetAtTime(pos.z, t, 0.01);
+      l.forwardX.setTargetAtTime(forward.x, t, 0.01);
+      l.forwardY.setTargetAtTime(forward.y, t, 0.01);
+      l.forwardZ.setTargetAtTime(forward.z, t, 0.01);
+      l.upX.setTargetAtTime(up.x, t, 0.01);
+      l.upY.setTargetAtTime(up.y, t, 0.01);
+      l.upZ.setTargetAtTime(up.z, t, 0.01);
+    } else {
+      // Firefox: the older setters.
+      l.setPosition(pos.x, pos.y, pos.z);
+      l.setOrientation(forward.x, forward.y, forward.z, up.x, up.y, up.z);
+    }
+    // A few times a second: the echo of where the player stands, and walls between them and looping sounds.
+    this.earT -= dt;
+    if (this.earT > 0) return;
+    this.earT = 0.2;
+    const enc = this.enclosure?.at(pos) ?? 0;
+    this.selfRoom.gain.setTargetAtTime(0.22 * enc, t, 0.15);
+    this.selfOpen.gain.setTargetAtTime(0.1 * (1 - enc), t, 0.15);
+    for (const l of this.loops) l.refresh();
+  }
+
+  /**
+   * Plays a sound from a point in the world: `play` calls one of the sound functions (`s => s.gunshot()`),
+   * whose nodes are routed through this point's panner, occlusion filter and echo sends.
+   */
+  at(pos: Vec, kind: SpatialKindName, play: (s: this) => void) {
+    if (!this.ready) return;
+    const k = SPATIAL_KINDS[kind];
+    const d = Math.hypot(pos.x - this.ear.x, pos.y - this.ear.y, pos.z - this.ear.z);
+    if (d > k.max || !this.admit(k.priority)) return;
+    const chain = this.chain(pos, kind, d);
+    const prev = this.route;
+    this.route = chain.input;
+    try {
+      play(this);
+    } finally {
+      this.route = prev;
+    }
+  }
+
+  /** A looping sound that stays at a point (hydrant hiss): returns its controls. */
+  loopAt(pos: Vec, kind: SpatialKindName, build: (out: AudioNode, ctx: AudioContext) => () => void): SpatialLoop | null {
+    if (!this.ready) return null;
+    const d = Math.hypot(pos.x - this.ear.x, pos.y - this.ear.y, pos.z - this.ear.z);
+    const chain = this.chain(pos, kind, d);
+    const loop = new SpatialLoop(this, pos, kind, chain);
+    const stop = build(chain.input, this.ctx!);
+    loop.onStop = () => {
+      stop();
+      this.loops.delete(loop);
+    };
+    this.loops.add(loop);
+    return loop;
+  }
+
+  /** @internal Direct sound and echo of a point; also refreshed by loops. */
+  chain(pos: Vec, kind: SpatialKindName, d: number): SpatialChain {
+    const ctx = this.ctx!;
+    const k = SPATIAL_KINDS[kind];
+    const input = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.Q.value = 0.7;
+    const panner = ctx.createPanner();
+    panner.panningModel = this.mode === 'hrtf' ? 'HRTF' : 'equalpower';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = k.ref;
+    panner.rolloffFactor = k.rolloff;
+    panner.maxDistance = 10000;
+    if (panner.positionX) {
+      panner.positionX.value = pos.x;
+      panner.positionY.value = pos.y;
+      panner.positionZ.value = pos.z;
+    } else panner.setPosition(pos.x, pos.y, pos.z);
+    input.connect(filter).connect(panner).connect(this.spatialBus);
+    const room = ctx.createGain();
+    const open = ctx.createGain();
+    filter.connect(room).connect(this.roomIn);
+    filter.connect(open).connect(this.openIn);
+    const chain = { input, filter, panner, room, open };
+    this.tune(chain, pos, kind, d, true);
+    return chain;
+  }
+
+  /** @internal Occlusion, air and echo for the current listener position. */
+  tune(c: SpatialChain, pos: Vec, kind: SpatialKindName, d: number, now: boolean) {
+    const ctx = this.ctx!;
+    const k = SPATIAL_KINDS[kind];
+    const occ = this.occlusion && d > 0.5 ? this.occlusion(this.ear, pos) : 0;
+    const v = voiceParams(d, occ);
+    const enc = this.enclosure?.at(pos) ?? 0;
+    const far = Math.sqrt(distanceGain(d, k));
+    const set = (p: AudioParam, value: number) => (now ? (p.value = value) : p.setTargetAtTime(value, ctx.currentTime, 0.12));
+    set(c.input.gain, v.gain);
+    set(c.filter.frequency, v.cutoff);
+    set(c.room.gain, k.room * enc * far * 0.7);
+    set(c.open.gain, k.open * (1 - enc) * far);
+  }
+
+  /** @internal */
+  get earPos(): Vec {
+    return this.ear;
+  }
+
+  private admit(priority: number): boolean {
+    const now = this.ctx!.currentTime;
+    this.voices = this.voices.filter((v) => v.end > now);
+    if (this.voices.length >= MAX_VOICES) {
+      // Full: replace a lower-priority voice, or drop this one.
+      const i = this.voices.findIndex((v) => v.priority < priority);
+      if (i < 0) return false;
+      this.voices.splice(i, 1);
+    }
+    this.voices.push({ end: now + VOICE_LIFE, priority });
+    return true;
+  }
+
+  /** Where this sound's nodes connect: the spatial chain being built, or the bus. */
+  private out(bus: Bus): AudioNode {
+    return this.route ?? this.buses[bus];
   }
 
   setMuffled(amount: number) {
@@ -66,7 +279,7 @@ export class Sfx {
     f.Q.value = q;
     const g = ctx.createGain();
     this.env(g, t, peak, 0.002, dur);
-    src.connect(f).connect(g).connect(this.buses[bus]);
+    src.connect(f).connect(g).connect(this.out(bus));
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.05);
   }
@@ -79,13 +292,15 @@ export class Sfx {
     o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
     const g = ctx.createGain();
     this.env(g, t, peak, attack, dur);
-    o.connect(g).connect(this.buses[bus]);
+    o.connect(g).connect(this.out(bus));
     o.start(t);
     o.stop(t + attack + dur + 0.05);
   }
 
-  /** Three layers: crack, body, room tail; +-5% pitch variation so it never sounds identical. */
-  /** `volume` < 1 for other players' shots, attenuated by distance (2D for now). */
+  /**
+   * Three layers: crack, body, room tail; +-5% pitch variation so it never sounds identical. Other players'
+   * shots play through `at(muzzle, 'gun', ...)`, which handles their distance and direction.
+   */
   gunshot(volume = 1) {
     if (!this.ready || volume < 0.02) return;
     const t = this.ctx!.currentTime;
@@ -152,7 +367,7 @@ export class Sfx {
     lfo.connect(lfoGain).connect(o.frequency);
     const g = ctx.createGain();
     this.env(g, t, 0.3, 0.01, 0.5);
-    o.connect(g).connect(this.buses.sfx);
+    o.connect(g).connect(this.out('sfx'));
     o.start(t);
     lfo.start(t);
     o.stop(t + 0.6);
@@ -229,7 +444,7 @@ export class Sfx {
     f.frequency.exponentialRampToValueAtTime(3500, t + 0.14);
     const g = ctx.createGain();
     this.env(g, t, 0.35, 0.05, 0.12);
-    src.connect(f).connect(g).connect(this.buses.sfx);
+    src.connect(f).connect(g).connect(this.out('sfx'));
     src.start(t);
     src.stop(t + 0.25);
   }
@@ -319,26 +534,33 @@ export class Sfx {
   }
 
   /** Continuous water hiss (burst hydrant). Volume is set every frame by the caller (distance). */
-  hiss(): { setVolume(v: number): void; stop(): void } {
-    if (!this.ready) return { setVolume() {}, stop() {} };
-    const ctx = this.ctx!;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.loop = true;
-    const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 2200;
-    f.Q.value = 0.5;
-    const g = ctx.createGain();
-    g.gain.value = 0;
-    src.connect(f).connect(g).connect(this.buses.sfx);
-    src.start();
-    return {
-      setVolume: (v) => g.gain.setTargetAtTime(0.1 * v, ctx.currentTime, 0.05),
-      stop: () => {
-        g.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+  /** Continuous water hiss (burst hydrant) at `pos`; the caller sets its strength every frame. */
+  hiss(pos: Vec): { setVolume(v: number): void; stop(): void } {
+    let g: GainNode | null = null;
+    const loop = this.loopAt(pos, 'normal', (out, ctx) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 2200;
+      f.Q.value = 0.5;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      g = gain;
+      src.connect(f).connect(gain).connect(out);
+      src.start();
+      return () => {
+        gain.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
         src.stop(ctx.currentTime + 0.5);
-      },
+      };
+    });
+    if (!loop || !g) return { setVolume() {}, stop() {} };
+    const gain: GainNode = g;
+    const ctx = this.ctx!;
+    return {
+      setVolume: (v) => gain.gain.setTargetAtTime(0.25 * v, ctx.currentTime, 0.05),
+      stop: () => loop.stop(),
     };
   }
 
@@ -403,7 +625,7 @@ export class Sfx {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.35, t + 0.03);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
-    src.connect(f).connect(g).connect(this.buses.sfx);
+    src.connect(f).connect(g).connect(this.out('sfx'));
     src.start(t, Math.random() * 0.1);
     src.stop(t + 0.9);
     this.tone(t, 'sine', 120, 60, 0.12, 0.25);
@@ -436,15 +658,14 @@ export class Sfx {
     this.tone(t, 'square', 900 + urgency * 700, 900 + urgency * 700, 0.05, 0.05, 'ui', 0.002);
   }
 
-  /** Explosion: sub thump, crack, rumble tail. `distance` in meters attenuates it (2D for now). */
-  explosion(distance: number) {
+  /** Explosion: sub thump, crack, rumble tail. Played through `at(center, 'boom', ...)` for its distance and direction. */
+  explosion() {
     if (!this.ready) return;
     const t = this.ctx!.currentTime;
-    const v = Math.max(0.15, Math.min(1, 12 / (distance + 6)));
-    this.tone(t, 'sine', 90, 30, 0.6, 1.0 * v);
-    this.noiseBurst(t, 0.12, 'lowpass', 3000, 0.7, 0.9 * v);
-    this.noiseBurst(t + 0.02, 1.2, 'lowpass', 500, 0.8, 0.6 * v);
-    this.noiseBurst(t + 0.1, 0.8, 'bandpass', 250, 0.6, 0.3 * v);
+    this.tone(t, 'sine', 90, 30, 0.6, 1.0);
+    this.noiseBurst(t, 0.12, 'lowpass', 3000, 0.7, 0.9);
+    this.noiseBurst(t + 0.02, 1.2, 'lowpass', 500, 0.8, 0.6);
+    this.noiseBurst(t + 0.1, 0.8, 'bandpass', 250, 0.6, 0.3);
   }
 
   /** Doghouse gag: two cartoon woofs. */
@@ -519,5 +740,42 @@ export class Sfx {
     if (!this.ready) return;
     const t = this.ctx!.currentTime;
     this.tone(t, 'triangle', 880, 1320, 0.06, 0.12, 'ui');
+  }
+}
+
+/** @internal The nodes a spatial sound goes through. */
+export interface SpatialChain {
+  input: GainNode;
+  filter: BiquadFilterNode;
+  panner: PannerNode;
+  room: GainNode;
+  open: GainNode;
+}
+
+/** A looping sound fixed at a point: walls and echo follow the listener a few times a second. */
+export class SpatialLoop {
+  onStop: () => void = () => {};
+  private stopped = false;
+
+  constructor(
+    private sfx: Sfx,
+    private pos: Vec,
+    private kind: SpatialKindName,
+    private chain: SpatialChain,
+  ) {}
+
+  get panner(): PannerNode {
+    return this.chain.panner;
+  }
+
+  refresh() {
+    const e = this.sfx.earPos;
+    this.sfx.tune(this.chain, this.pos, this.kind, Math.hypot(this.pos.x - e.x, this.pos.y - e.y, this.pos.z - e.z), false);
+  }
+
+  stop() {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.onStop();
   }
 }
