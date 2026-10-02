@@ -14,6 +14,22 @@ docker compose up -d --build # produção com nginx, banco e Redis: http://local
 
 Para **publicar e jogar com amigos** (Radmin VPN, túnel, roteador ou servidor alugado, com nginx), veja **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
+## No celular
+
+O jogo detecta sozinho se está num **PC** (teclado e mouse) ou no **navegador de um celular/tablet** (toque) — `?mobile=1` ou `?mobile=0` na URL força um dos dois. No celular:
+- **Controles de toque** (no estilo do CoD Mobile, com ícones de linha minimalistas): arraste no lado esquerdo para andar (empurrando até a borda o personagem corre), arraste no lado direito para mirar, botão grande de tiro embaixo à direita (dá para arrastá-lo e mirar enquanto atira; há um segundo botão de tiro à esquerda) com o de mirar ao lado (tocar liga/desliga, ou segurar, nas configurações), pular e agachar no canto, recarregar, faca e granada (segure para preparar, solte para arremessar). Em cima: pausar, placar e tela cheia. A mira tem curva de resposta: arrastos lentos são precisos, rápidos viram mais. O HUD no celular é limpo (texto e barras finas, sem caixas) e o aparelho vibra de leve ao acertar (Android). O aviso de humilhar um corpo é tocado na própria caixa.
+- **Configurações** (menu de pausa): sensibilidade do toque, tamanho e opacidade dos botões, **Ajustar botões** (arraste cada botão para onde preferir), segurar para mirar, **assistência de mira** (desligada por padrão; ligada, a mira desacelera sobre um inimigo e acompanha o movimento dele enquanto você mira, sem puxar a mira de longe) e tela cheia ao jogar.
+- **Tela cheia**: ao tocar em Jogar o jogo entra em tela cheia e trava na horizontal (Android e iPad). No **iPhone**, o Safari não permite tela cheia em páginas: use **Compartilhar → Adicionar à Tela de Início**; aberto pelo ícone, o jogo já abre em tela cheia e na horizontal.
+- A partida é jogada com o celular **deitado**; em pé aparece "Gire o celular". Os gráficos começam leves (sem sombras) e melhoram sozinhos se o aparelho aguentar 60 FPS.
+
+## Controle (PS4, PS5, Xbox 360, Xbox One)
+
+Funciona no navegador do **PC** (USB ou Bluetooth) e do **celular** (Bluetooth: Chrome no Android, Safari no iPhone/iPad), pela Gamepad API — é só ligar o controle e apertar um botão. O jogo reconhece se é PlayStation ou Xbox e mostra os botões certos nos avisos e na ajuda.
+- **Na partida** (layout do CoD): L2/LT mira · R2/RT atira · L1/LB granada (segure para preparar) · R1/RB ou R3 faca · ✕/A pula · ◯/B agacha (tocar alterna; correndo, desliza) · □/X recarrega · △/Y humilhar · L3 corre · Options/Menu pausa · Touchpad/View placar. Analógico esquerdo anda, o direito mira (zona morta, curva de resposta e um giro mais rápido segurando no extremo). O controle vibra ao atirar, acertar e levar dano.
+- **Nos menus**: D-pad ou analógico move o foco, ✕/A confirma (seleções trocam de opção, controles deslizantes andam com ←/→), ◯/B volta, L1/R1 trocam de aba (editor de personagem), o analógico direito rola as listas. Start/Options volta ao jogo da pausa.
+- **Configurações**: sensibilidade do controle e **assistência de mira** (a mesma do celular: desligada por padrão; ligada, a mira desacelera sobre um inimigo e acompanha o movimento dele enquanto você mira, sem nunca puxar a mira de longe; nunca vale para o mouse).
+- No PC, jogar com controle não prende o mouse; um clique no jogo devolve o controle ao mouse. No celular, os botões de toque somem enquanto o controle está em uso e voltam ao tocar na tela.
+
 ## Jogar online
 
 Ao abrir o jogo, a **home** mostra a sua **conta** e três opções. O **sexo do personagem** é escolhido no **Perfil** (masculino ou feminino: a personagem tem cabelo com rabo de cavalo e silhueta própria; todos veem a escolha, online e nos corpos); sem conta, o personagem é o masculino.

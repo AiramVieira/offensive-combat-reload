@@ -2,7 +2,14 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Phones: "Add to Home Screen" opens the game fullscreen in landscape (iPhone has no Fullscreen API). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Offensive Combat" />
+    <meta name="theme-color" content="#4b2a9a" />
     <title>Offensive Combat — Protótipo</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -143,7 +150,23 @@
           </div>
           <div>
             <h3 id="settings-title"></h3>
-            <label><span id="lbl-sens"></span><input id="set-sens" type="range" min="0.3" max="8" step="0.05" /><output id="out-sens"></output></label>
+            <label class="desktop-only"><span id="lbl-sens"></span><input id="set-sens" type="range" min="0.3" max="8" step="0.05" /><output id="out-sens"></output></label>
+            <div id="pad-settings" class="pad-only">
+              <label><span id="lbl-pad-sens"></span><input id="set-pad-sens" type="range" min="0.3" max="2.5" step="0.05" /><output id="out-pad-sens"></output></label>
+            </div>
+            <label class="check assist-only"><input id="set-aim-assist" type="checkbox" /><span id="lbl-aim-assist"></span></label>
+            <div id="touch-settings" class="mobile-only">
+              <label><span id="lbl-touch-sens"></span><input id="set-touch-sens" type="range" min="0.3" max="3" step="0.05" /><output id="out-touch-sens"></output></label>
+              <label><span id="lbl-touch-scale"></span><input id="set-touch-scale" type="range" min="0.7" max="1.4" step="0.05" /><output id="out-touch-scale"></output></label>
+              <label><span id="lbl-touch-opacity"></span><input id="set-touch-opacity" type="range" min="0.2" max="1" step="0.05" /><output id="out-touch-opacity"></output></label>
+              <label class="check"><input id="set-ads-hold" type="checkbox" /><span id="lbl-ads-hold"></span></label>
+              <label class="check fs-only"><input id="set-fullscreen" type="checkbox" /><span id="lbl-fullscreen"></span></label>
+              <div class="touch-actions">
+                <button id="touch-edit-btn" type="button" class="link-btn"></button>
+                <button id="touch-fs-btn" type="button" class="link-btn fs-only"></button>
+              </div>
+              <p id="ios-fs-hint" class="hint hidden"></p>
+            </div>
             <label><span id="lbl-ads"></span><input id="set-ads" type="range" min="0.3" max="1.5" step="0.05" /><output id="out-ads"></output></label>
             <label><span id="lbl-fov"></span><input id="set-fov" type="range" min="55" max="95" step="1" /><output id="out-fov"></output></label>
             <label><span id="lbl-vol"></span><input id="set-vol" type="range" min="0" max="1" step="0.05" /><output id="out-vol"></output></label>
@@ -151,10 +174,18 @@
             <label class="check"><input id="set-invert" type="checkbox" /><span id="lbl-invert"></span></label>
           </div>
         </div>
-        <p id="menu-debug-hint" class="hint"></p>
+        <p id="menu-debug-hint" class="hint desktop-only"></p>
         <button id="menu-exit" class="link-btn hidden"></button>
       </div>
     </div>
+
+    <!-- Phones: the layout editor's bar, and the "turn your phone" notice during a match. -->
+    <div id="touch-edit-bar" class="hidden sticker">
+      <span id="touch-edit-hint"></span>
+      <button id="touch-edit-reset" type="button" class="link-btn"></button>
+      <button id="touch-edit-done" type="button" class="big-btn"></button>
+    </div>
+    <div id="rotate"><div class="rotate-icon">📱↻</div><p id="rotate-text"></p></div>
 
     <script type="module" src="/client/main.ts"></script>
   </body>

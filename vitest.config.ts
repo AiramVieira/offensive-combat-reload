@@ -8,7 +8,8 @@ export default defineConfig({
     alias: { '@shared': fileURLToPath(new URL('./shared', import.meta.url)) },
   },
   test: {
-    include: ['server/tests/**/*.test.ts'],
+    // Client modules with pure logic are tested here too (they run in node).
+    include: ['server/tests/**/*.test.ts', 'client/tests/**/*.test.ts'],
     environment: 'node',
     globalSetup: ['server/tests/globalSetup.ts'],
     // One game server per file, all on the same database: run the files one after another.

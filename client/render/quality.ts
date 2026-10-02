@@ -1,6 +1,7 @@
 // Graphics presets and dynamic resolution (sections 3 and 5). Also detects when the browser renders
 // WebGL on the CPU (hardware acceleration off or GPU blocklisted), which caps the game at ~5-10 FPS.
 import * as THREE from 'three';
+import { IS_MOBILE } from '../core/device';
 import type { RenderContext } from './renderer';
 
 export type Quality = 'auto' | 'baixa' | 'media' | 'alta';
@@ -20,6 +21,12 @@ const PRESETS: Record<Exclude<Quality, 'auto'>, Preset> = {
   alta: { maxDpr: 1.5, shadows: true, shadowSize: 2048, shadowEvery: 1 },
 };
 
+/**
+ * Phones and tablets on "auto": light to start (no shadows, resolution capped; their screens are small and dense
+ * anyway); shadows come on later if the device holds the frame rate.
+ */
+const MOBILE: Preset = { maxDpr: 1.25, shadows: false, shadowSize: 1024, shadowEvery: 3 };
+
 const SOFTWARE_RENDERERS = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i;
 const MIN_SCALE = 0.5;
 
@@ -35,6 +42,8 @@ export class QualityManager {
   private frames = 0;
   private goodSeconds = 0;
   private frame = 0;
+  /** Phones: shadows were already tried once (they don't come back after failing). */
+  private triedShadows = false;
 
   constructor(private ctx: RenderContext) {
     ctx.renderer.shadowMap.autoUpdate = false;
@@ -54,8 +63,9 @@ export class QualityManager {
 
   set(q: Quality) {
     this.quality = q;
-    this.preset = q === 'auto' ? (this.software ? PRESETS.baixa : PRESETS.media) : PRESETS[q];
+    this.preset = q === 'auto' ? (this.software ? PRESETS.baixa : IS_MOBILE ? MOBILE : PRESETS.media) : PRESETS[q];
     this.scale = 1;
+    this.triedShadows = false;
     this.goodSeconds = 0;
     this.applyShadows();
     this.applyResolution();
@@ -94,6 +104,15 @@ export class QualityManager {
         this.goodSeconds = 0;
         this.scale = Math.min(1, this.scale + 0.1);
         this.applyResolution();
+      }
+    } else if (fps > 57 && IS_MOBILE && !this.preset.shadows && !this.triedShadows && !this.software) {
+      // A phone that holds 60 at full resolution for a while gets shadows (once: if they cost too much, the
+      // branch above turns them off again for good).
+      if (++this.goodSeconds >= 10) {
+        this.goodSeconds = 0;
+        this.triedShadows = true;
+        this.preset = { ...this.preset, shadows: true };
+        this.applyShadows();
       }
     }
   }

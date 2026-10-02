@@ -11,6 +11,11 @@ import { eyeHeight, type MoveInput } from '@shared/movement';
 import { CLOSE, FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
 import { startLoop } from './core/loop';
 import { Input } from './core/input';
+import { enterFullscreen, IS_MOBILE } from './core/device';
+import { TouchControls } from './ui/touch';
+import { gamepad } from './core/gamepad';
+import { PadNav } from './ui/padNav';
+import { AimAssist } from './gameplay/aimAssist';
 import { loadSettings, saveSettings } from './core/settings';
 import { createRenderContext } from './render/renderer';
 import { Effects } from './render/effects';
@@ -73,6 +78,9 @@ async function boot() {
   const mark = (name: string) => (boot[name] = Math.round(performance.now() - bootT0));
   const screens = new Screens();
   screens.setProgress(0.1);
+  // Controllers drive the menus from the start (home, editor), and the match once it begins.
+  new PadNav(gamepad);
+  gamepad.onDeviceChange = () => screens.showControls(gamepad);
 
   const physics = await createPhysics();
   mark('physics');
@@ -144,6 +152,26 @@ async function boot() {
   const scoreboard = new Scoreboard();
   const input = new Input(ctx.renderer.domElement);
   sfx.setVolume(settings.volume);
+  // Phones and tablets: touch controls over the HUD; the pause button leaves to the menu.
+  const touch = IS_MOBILE ? new TouchControls(input, settings, document.getElementById('hud')!) : null;
+  gamepad.attach(input, settings);
+  input.padActive = gamepad.device === 'pad';
+  // Start on a controller resumes from the pause menu.
+  gamepad.onStart = () => {
+    if (!document.getElementById('menu')!.classList.contains('hidden')) document.getElementById('play-btn')!.click();
+  };
+  if (touch) touch.onPause = () => input.unlock();
+  // Phones: leaving the browser (home button, a call) pauses like Esc does on a computer.
+  if (IS_MOBILE) document.addEventListener('visibilitychange', () => document.hidden && input.unlock());
+  // The context prompt (humiliate a body) is tapped on phones.
+  if (IS_MOBILE) {
+    const prompt = document.getElementById('prompt')!;
+    prompt.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      input.press('taunt', true);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) prompt.addEventListener(ev, () => input.press('taunt', false));
+  }
 
   // Bots mode: a navmesh from the map's colliders, and hitboxes on the local player so bots can hit us.
   let bots: BotManager | null = null;
@@ -271,6 +299,7 @@ async function boot() {
       viewmodel.muzzleCameraSpace(muzzle).applyMatrix4(ctx.camera.matrixWorld);
       viewmodel.flash();
       viewmodel.kick();
+      gamepad.rumble(45, 0.1, 0.35);
       effects.flash(muzzle);
       sfx.gunshot();
       if (shotIndex % weapon.data.tracanteACada === 0) effects.tracer(muzzle, end);
@@ -827,20 +856,47 @@ async function boot() {
     saveSettings(s);
     sfx.setVolume(s.volume);
     if (s.quality !== quality.current) quality.set(s.quality);
+    touch?.layout();
   });
   screens.onPlay(() => {
     sfx.unlock();
     sfx.ui();
+    // Phones: fullscreen and landscape (needs this tap).
+    if (IS_MOBILE && settings.fullscreen) void enterFullscreen();
     void input.lock();
   });
+  if (touch) {
+    // The layout editor: the controls shown over the paused game, draggable.
+    screens.onEditLayout(
+      () => {
+        hud.show(true);
+        touch.setEditing(true);
+      },
+      () => {
+        touch.setEditing(false);
+        hud.show(false);
+        saveSettings(settings);
+      },
+      () => touch.resetLayout(),
+    );
+  }
   screens.onExit(t('exitToHome'), () => {
     conn?.close();
     location.reload();
   });
-  ctx.renderer.domElement.addEventListener('click', () => {
-    if (!input.locked) void input.lock();
-  });
+  // Desktop: clicking the game takes the mouse back (on phones the menu's button resumes).
+  if (!IS_MOBILE) {
+    ctx.renderer.domElement.addEventListener('click', () => {
+      // Playing on a controller leaves the cursor free: a click hands the game back to the mouse.
+      if (!input.locked || !document.pointerLockElement) {
+        input.padActive = false;
+        void input.lock();
+      }
+    });
+  }
   input.onLockChange = (locked) => {
+    document.documentElement.classList.toggle('playing', locked);
+    if (!locked) touch?.reset();
     if (locked) {
       screens.hideMenu();
       hud.show(true);
@@ -935,7 +991,6 @@ async function boot() {
         sfx.fuseBeep(1 - fuse / grenadeData.pavio);
       }
 
-      const axis = (a: boolean, b: boolean) => (a ? 1 : 0) - (b ? 1 : 0);
       const locked = taunt.active; // no moving, shooting or aiming while dancing
       let lunge: MoveInput['lunge'] = null;
       const wasLunging = lunging;
@@ -962,8 +1017,8 @@ async function boot() {
         }
       }
       const move: MoveInput = {
-        forward: locked ? 0 : axis(input.down('forward'), input.down('back')),
-        right: locked ? 0 : axis(input.down('right'), input.down('left')),
+        forward: locked ? 0 : input.axis('forward', 'back', input.move.forward),
+        right: locked ? 0 : input.axis('right', 'left', input.move.right),
         jump: !locked && (input.down('jump') || input.consume('jump')),
         crouch: !locked && input.down('crouch'),
         sprint: !locked && !melee.swinging && !fireIntent && input.down('sprint'),
@@ -1116,6 +1171,10 @@ async function boot() {
   const tuning = new TuningPanel({ 'Primeira pessoa (VM_FEEL)': VM_FEEL, 'Terceira pessoa (ANIM)': ANIM }, (section) => {
     if (section.startsWith('Primeira')) viewmodel.retune();
   });
+  // Aim assist (touch and controller, never the mouse; off by default): slows the look over an enemy and
+  // follows them while the player is aiming (gameplay/aimAssist.ts).
+  const aimAssist = new AimAssist();
+  let lastAimInput = 99;
   const render = (alpha: number, frameDt: number) => {
     const tRender = performance.now();
     renderTime += frameDt;
@@ -1143,9 +1202,16 @@ async function boot() {
     if (input.locked && !player.dead && !taunt.active) {
       const zoomMul = 1 + (weapon.data.ads.zoom - 1) * weapon.ads;
       const adsMul = 1 + (settings.adsSensitivity - 1) * weapon.ads;
-      const k = settings.sensitivity * MOUSE_DEG_PER_COUNT * DEG * zoomMul * adsMul;
+      lastAimInput = mdx || mdy || input.move.forward || input.move.right || gamepad.sinceStick < 0.05 ? 0 : lastAimInput + frameDt;
+      const assist =
+        settings.aimAssist && gamepad.device !== 'mouse'
+          ? aimAssist.update(ctx.camera.position, player.yaw, player.pitch, targets(), frameDt, lastAimInput < 0.3)
+          : { slow: 1, dYaw: 0, dPitch: 0 };
+      const k = settings.sensitivity * MOUSE_DEG_PER_COUNT * DEG * zoomMul * adsMul * assist.slow;
       player.yaw -= mdx * k;
       player.pitch -= mdy * k * (settings.invertY ? -1 : 1);
+      player.yaw += assist.dYaw;
+      player.pitch += assist.dPitch;
       player.pitch = THREE.MathUtils.clamp(player.pitch, -89 * DEG, 89 * DEG);
     }
 
