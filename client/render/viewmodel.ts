@@ -6,7 +6,7 @@
 // Procedural layers on top of the hip / ADS / sprint pose, each a damped spring (springs.ts) with every
 // number in VM_FEEL (tunable live with F6):
 // - sway: the rifle lags behind the mouse;
-// - bob: synced to the steps (one sine per two steps), different walking, running and crouched;
+// - bob: synced to the body's steps (its stride, one cycle per two steps), different walking, running and crouched;
 // - recoil: a visual kick (back, up, a little sideways noise) separate from the aim recoil, settling in
 //   ~0.2 s;
 // - landing: the rifle sinks in proportion to the fall;
@@ -18,6 +18,7 @@ import { armGlove, armSleeve, bodyStats, type Appearance } from '@shared/appeara
 import { PROGRESSION, type GrenadeKind, type KnifeModel, type RifleLevel } from '@shared/progression';
 import type { Sex } from '@shared/protocol';
 import { toonGradient } from './materials';
+import { ANIM } from '../character/animator';
 import { Spring } from './springs';
 import { armMesh, placeArm } from './viewmodelArms';
 import { grenadeModel } from '../weapons/grenades';
@@ -59,8 +60,11 @@ export const VM_FEEL = {
   ads: { ease: 3 },
   /** Sway: rifle lag behind the mouse. */
   sway: { perPixel: 0.0009, max: 0.05, pos: 0.5, rot: 1.5, settle: 0.22, bounce: 0.25, adsKeep: 0.2 },
-  /** Bob: amplitude (x, y m; roll rad), stride of one step (m), multipliers by state. */
-  bob: { x: 0.011, y: 0.012, roll: 0.02, step: 0.75, run: 1.8, crouch: 0.55, adsKeep: 0.15, follow: 8 },
+  /**
+   * Bob: amplitude (x, y m; pitch, roll rad), multipliers by state, how far the rifle trails the step (rad
+   * of the cycle). The stride is the body's (ANIM.stride), so the rifle moves at the pace of the feet.
+   */
+  bob: { x: 0.009, y: 0.01, pitch: 0.008, roll: 0.012, run: 1.5, crouch: 0.6, adsKeep: 0.15, follow: 6, lag: 0.35 },
   /** Visual recoil (peaks per shot), settling time and the most it piles up to. */
   recoil: { back: 0.028, up: 0.045, side: 0.012, settle: 0.2, maxBack: 0.07, maxUp: 0.14, adsKeep: 0.5 },
   /** Landing: sink (m) = base + perMeter × fall height, up to max. */
@@ -336,15 +340,23 @@ export class Viewmodel {
     let ry = this.sprintT * F.pose.sprintRot[1];
     let rz = this.sprintT * F.pose.sprintRot[2];
 
-    // Bob: one sine per two steps, the phase driven by the distance walked (it stays in step with the feet).
+    // Bob: one cycle per two steps, the phase driven by the distance walked over the body's own stride (the
+    // same as the third-person animator: longer steps when faster), so it keeps the pace of the feet instead
+    // of shaking. A figure eight: sideways once per cycle, a smooth dip (and a slight nod) at each foot strike,
+    // trailing the step a little as the rifle's weight follows the body.
     const moving = s.grounded && s.speed > 0.5;
-    const stateAmp = moving ? Math.min(1.4, s.speed / 5.5) * (1 + (F.bob.run - 1) * this.sprintT) * (1 + (F.bob.crouch - 1) * s.crouch) : 0;
+    const stateAmp = moving ? Math.min(1.3, s.speed / 5.5) * (1 + (F.bob.run - 1) * this.sprintT) * (1 + (F.bob.crouch - 1) * s.crouch) : 0;
     this.bobAmp += (stateAmp - this.bobAmp) * k(F.bob.follow);
-    this.bobPhase += ((s.speed * dt) / F.bob.step) * Math.PI;
+    const half = THREE.MathUtils.clamp(ANIM.stride.min + ANIM.stride.perSpeed * s.speed, ANIM.stride.min, ANIM.stride.max) * (1 - 0.35 * s.crouch);
+    this.bobPhase = (this.bobPhase + ((s.speed * dt) / (4 * half)) * Math.PI * 2) % (Math.PI * 2);
     const bob = this.bobAmp * (1 - ads * (1 - F.bob.adsKeep));
-    pos.x += Math.sin(this.bobPhase) * F.bob.x * bob;
-    pos.y += -Math.abs(Math.cos(this.bobPhase)) * F.bob.y * bob;
-    rz += Math.sin(this.bobPhase) * F.bob.roll * bob;
+    const ph = this.bobPhase - F.bob.lag;
+    const side = Math.sin(ph);
+    const dip = Math.cos(ph) ** 2; // 1 at each foot strike, 0 mid-stride; smooth, no cusp
+    pos.x += side * F.bob.x * bob;
+    pos.y -= dip * F.bob.y * bob;
+    rx -= dip * F.bob.pitch * bob;
+    rz += side * F.bob.roll * bob;
 
     // Sway: the rifle lags behind the mouse (a springy follow).
     const sway = 1 - ads * (1 - F.sway.adsKeep);
