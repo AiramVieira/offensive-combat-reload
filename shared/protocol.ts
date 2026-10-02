@@ -17,6 +17,11 @@ export const NET = {
   maxPlayers: 10,
   nameMax: 16,
   sessionNameMax: 24,
+  /** Longest chat message (characters). */
+  chatMax: 120,
+  /** Chat flood limit: a burst of this many messages, then one every chatEveryMs. */
+  chatBurst: 4,
+  chatEveryMs: 1500,
   /** Free-for-all respawn delay (long enough to watch your own humiliation). */
   respawnDelay: 5,
   corpseWindow: HUMILIATION.window,
@@ -128,6 +133,8 @@ export type ClientMsg =
   | { t: 'respawn'; p: Vec3; yaw: number }
   /** An environmental gag was triggered (e.g. "hidrante:1"); relayed so everyone sees it. */
   | { t: 'prop'; id: string }
+  /** A line in the session's chat (sanitized and rate-limited by the server). */
+  | { t: 'chat'; text: string }
   /** `rtt` = the client's last measured round trip (ms), shown on the scoreboard. */
   | { t: 'ping'; c: number; rtt?: number };
 
@@ -153,6 +160,10 @@ export type ServerMsg =
   /** A player changed their equipped weapon levels: everyone else sees the new models. */
   | { t: 'playerLoadout'; id: number; lo: Loadout }
   | { t: 'prop'; id: string; by: number }
+  /** A chat line, to everyone in the session (the sender too: what they see is what the server accepted). */
+  | { t: 'chat'; id: number; name: string; text: string }
+  /** The player's chat line was dropped: their account is muted, or they're sending too fast. */
+  | { t: 'chatRefused'; reason: 'muted' | 'slow' }
   | { t: 'pong'; c: number; s: number }
   /** The account's progress changed (points only come from the server online). */
   | { t: 'progresso'; armas: Record<ProgWeapon, { xp: number; nivel: number; equipado: number }>; conta: { xp: number; nivel: number }; subiu?: { tipo: ProgWeapon | 'conta'; nivel: number } };
@@ -172,4 +183,23 @@ export function sanitizeName(raw: unknown, max: number): string {
     .trim()
     .slice(0, max);
   return s;
+}
+
+/**
+ * A chat line as everyone will see it: no control characters, no bidirectional overrides (they could flip a
+ * line to fake another player's name), single spaces, NET.chatMax characters. Shown with textContent, never
+ * as HTML, so "<3" stays.
+ */
+export function sanitizeChat(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const s = raw
+    .slice(0, NET.chatMax * 4)
+    // Line breaks and tabs first, so they become spaces instead of gluing words together.
+    .replace(/\s+/g, ' ')
+    // Zero-width joiners stay: emoji sequences (👨‍👩‍👧) are made with them.
+    .replace(/[\u0000-\u001f\u007f-\u009f​‎‏‪-‮⁦-⁩﻿]/g, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+  // By code points, so an emoji at the end isn't cut in half.
+  return Array.from(s).slice(0, NET.chatMax).join('').trim();
 }

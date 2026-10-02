@@ -1,10 +1,10 @@
 // The game connection: single-use tickets, origin check, one connection per account, revocation, and
 // progress earned only from kills the server validated.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { CLOSE } from '@shared/protocol';
+import { CLOSE, NET } from '@shared/protocol';
 import type { GameServer } from '../app';
 import { ticketKey } from '../api';
-import { ban } from '../moderacao';
+import { ban, mute, unmute } from '../moderacao';
 import { Browser, Player, sleep, startTestServer } from './helpers';
 
 let game: GameServer;
@@ -197,6 +197,46 @@ describe('armas vistas pelos outros', () => {
     const b = await joinMain(await signedIn('Novato'));
     const info = b.joined.players.find((p) => p.id === a.joined.you);
     expect(info?.lo).toBeDefined();
+    a.p.close();
+    b.p.close();
+  });
+});
+
+describe('chat da sala', () => {
+  it('a fala chega a todos da sala, inclusive a quem falou, já limpa', async () => {
+    const a = await joinMain(await signedIn('Falante'));
+    const b = await joinMain(await signedIn('Ouvinte'));
+    a.p.send({ t: 'chat', text: '  oi‮   pessoal\n<3  ' });
+    const heard = await b.p.next('chat', (m) => m.id === a.joined.you);
+    expect(heard.text).toBe('oi pessoal <3');
+    expect(heard.name).toBe(a.joined.players.find((p) => p.id === a.joined.you)!.name);
+    expect((await a.p.next('chat', (m) => m.id === a.joined.you)).text).toBe('oi pessoal <3');
+    // Too long is cut, empty is dropped.
+    a.p.send({ t: 'chat', text: 'x'.repeat(500) });
+    expect((await b.p.next('chat', (m) => m.id === a.joined.you)).text).toHaveLength(NET.chatMax);
+    a.p.close();
+    b.p.close();
+  });
+
+  it('quem manda rápido demais é segurado depois da rajada', async () => {
+    const a = await joinMain(await signedIn('Spammer'));
+    for (let i = 0; i <= NET.chatBurst; i++) a.p.send({ t: 'chat', text: `msg ${i}` });
+    expect((await a.p.next('chatRefused')).reason).toBe('slow');
+    a.p.close();
+  });
+
+  it('silenciar vale na partida em andamento, e dessilenciar devolve o chat', async () => {
+    const a = await joinMain(await signedIn('Boquirroto'));
+    const b = await joinMain(await signedIn('Paciente'));
+    await mute(game.deps, a.welcome.name, 'teste', '1h');
+    await sleep(200);
+    a.p.send({ t: 'chat', text: 'xingamento' });
+    expect((await a.p.next('chatRefused')).reason).toBe('muted');
+    await unmute(game.deps, a.welcome.name);
+    await sleep(200);
+    a.p.send({ t: 'chat', text: 'desculpa' });
+    expect((await b.p.next('chat', (m) => m.id === a.joined.you)).text).toBe('desculpa');
+    expect(b.p.msgs.some((m) => m.t === 'chat' && m.text === 'xingamento')).toBe(false);
     a.p.close();
     b.p.close();
   });

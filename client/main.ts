@@ -11,7 +11,7 @@ import { eyeHeight, type MoveInput } from '@shared/movement';
 import { CLOSE, FLAG, NET, ONLINE_GRENADE_LEVEL, type AwardLabel, type KillKind, type Vec3 } from '@shared/protocol';
 import { startLoop } from './core/loop';
 import { Input } from './core/input';
-import { enterFullscreen, IS_MOBILE } from './core/device';
+import { CAN_KEEP_ESCAPE, enterFullscreen, escapeIsKept, IS_MOBILE, isFullscreen, keepEscape } from './core/device';
 import { TouchControls } from './ui/touch';
 import { gamepad } from './core/gamepad';
 import { PadNav } from './ui/padNav';
@@ -47,6 +47,7 @@ import { CharacterRig, type HitPose } from './entities/rig';
 import { isBehind } from './entities/hitboxes';
 import { Corpse } from './gameplay/corpse';
 import { Sfx } from './audio/sfx';
+import { Chat } from './ui/chat';
 import { Hud, type FeedIcon } from './ui/hud';
 import { Screens } from './ui/menu';
 import { closeReason, showHome } from './ui/home';
@@ -161,6 +162,14 @@ async function boot() {
     if (!document.getElementById('menu')!.classList.contains('hidden')) document.getElementById('play-btn')!.click();
   };
   if (touch) touch.onPause = () => input.unlock();
+  // Session chat: online only (Enter/T on a computer, the chat button on a phone).
+  const chat = new Chat(input);
+  chat.enable(!!conn);
+  chat.onSend = (text) => conn?.send({ t: 'chat', text });
+  if (touch) {
+    touch.onChat = () => chat.toggle();
+    touch.setChat(!!conn);
+  }
   // Phones: leaving the browser (home button, a call) pauses like Esc does on a computer.
   if (IS_MOBILE) document.addEventListener('visibilitychange', () => document.hidden && input.unlock());
   // The context prompt (humiliate a body) is tapped on phones.
@@ -847,6 +856,8 @@ async function boot() {
       else if (c.info.victim === me || c.corpseCenter(tmp).distanceTo(playerFeet(feet)) < 25) humiliationFx(c);
     });
     conn.on('prop', (m) => map.props.remote(m.id));
+    conn.on('chat', (m) => chat.add(m.name, m.text, m.id === me));
+    conn.on('chatRefused', (m) => chat.system(t(m.reason === 'muted' ? 'chatMuted' : 'chatSlow')));
     map.props.onLocal = (id) => conn.send({ t: 'prop', id });
     conn.onClose = (code) => hud.setNetStatus(code === CLOSE.revoked || code === CLOSE.replaced ? closeReason(code) : t('lostConnection'));
   }
@@ -861,9 +872,17 @@ async function boot() {
   screens.onPlay(() => {
     sfx.unlock();
     sfx.ui();
-    // Phones: fullscreen and landscape (needs this tap).
-    if (IS_MOBILE && settings.fullscreen) void enterFullscreen();
+    // The mouse first: the fullscreen request uses up the click, the pointer lock doesn't.
     void input.lock();
+    // Phones: fullscreen and landscape (needs this tap). Computer: fullscreen keeps Esc for the game, so it
+    // opens and closes the menu exactly and the mouse aims again at once.
+    if (settings.fullscreen && (IS_MOBILE || CAN_KEEP_ESCAPE) && !isFullscreen()) void enterFullscreen();
+  });
+  // Entering fullscreen may cost the pointer lock (browser-made, so it can be retaken without a click).
+  document.addEventListener('fullscreenchange', () => {
+    if (IS_MOBILE || !isFullscreen()) return;
+    void keepEscape();
+    if (pausedAt !== null && performance.now() - pausedAt < 1500) void input.lock();
   });
   if (touch) {
     // The layout editor: the controls shown over the paused game, draggable.
@@ -894,16 +913,48 @@ async function boot() {
       }
     });
   }
+  /** When the pause menu opened (null: not paused, or the start menu that comes before playing). */
+  let pausedAt: number | null = null;
   input.onLockChange = (locked) => {
     document.documentElement.classList.toggle('playing', locked);
-    if (!locked) touch?.reset();
+    if (!locked) {
+      touch?.reset();
+      chat.close();
+    }
     if (locked) {
+      pausedAt = null;
       screens.hideMenu();
       hud.show(true);
     } else {
+      pausedAt = performance.now();
       screens.showMenu('pause');
     }
   };
+  // Computer: Esc opens and closes the pause menu.
+  // - In fullscreen the game keeps Esc (keepEscape): it pauses by letting go of the mouse itself, which the
+  //   browser lets it take back without a click, so closing the menu has the mouse aiming at once.
+  // - Elsewhere the browser takes the Esc that pauses and only gives the mouse back on a click or another key:
+  //   the next Esc closes the menu and play resumes, the mouse coming back with the first key or click.
+  // The Esc that opened the menu may be seen after it did (its time is earlier): never a second press.
+  if (!IS_MOBILE)
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape' || e.repeat) return;
+      if (input.locked) {
+        if (escapeIsKept() && !chat.isOpen) {
+          e.preventDefault();
+          input.unlock();
+        }
+        return;
+      }
+      if (pausedAt === null || e.timeStamp <= pausedAt) return;
+      e.preventDefault();
+      sfx.ui();
+      void input.lock().then((got) => {
+        if (got || input.locked) return;
+        input.setPlaying(true);
+        hud.notice(t('aimOnNextKey'));
+      });
+    });
 
   // --- Simulation tick ------------------------------------------------------------------------------
   let lunging = false;
@@ -1392,6 +1443,9 @@ async function boot() {
     if (showBoard && bots && botMode) scoreboard.update(bots.standings(), me, t('botsSubtitle', { n: botMode.count }));
 
     hud.update(frameDt);
+    // Every frame (the bar and the ring move): the reload, and what the touch buttons show.
+    hud.setReload(weapon.reloadProgress);
+    touch?.setStatus(thrower.count, weapon.reloadProgress, weapon.mag <= weapon.data.pente * 0.3 && weapon.reserve > 0);
     sfx.setMuffled(player.dead ? 0 : Math.max(0, (HEALTH.lowThreshold - player.health) / HEALTH.lowThreshold));
 
     quality.beforeRender();

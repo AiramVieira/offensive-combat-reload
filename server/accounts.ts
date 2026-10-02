@@ -29,6 +29,8 @@ export type AuthEventType =
   | 'anonymized'
   | 'ban'
   | 'unban'
+  | 'chat_mute'
+  | 'chat_unmute'
   | 'role_grant'
   | 'role_revoke';
 
@@ -121,16 +123,26 @@ export async function getAccount(db: Queryable, accountId: string) {
   return rows[0] ?? null;
 }
 
-/** The active ban of an account, if any (expired or revoked ones don't count). */
-export async function activeBan(db: Queryable, accountId: string) {
+export type SanctionType = 'ban' | 'chat_mute';
+
+/** The active sanction of that type on an account, if any (expired or revoked ones don't count). */
+export async function activeSanction(db: Queryable, accountId: string, type: SanctionType) {
   const { rows } = await db.query<{ reason: string; expires_at: Date | null }>(
     `SELECT reason, expires_at FROM sanction
-      WHERE account_id = $1 AND type = 'ban' AND revoked_at IS NULL AND starts_at <= now()
+      WHERE account_id = $1 AND type = $2 AND revoked_at IS NULL AND starts_at <= now()
         AND (expires_at IS NULL OR expires_at > now())
       ORDER BY expires_at DESC NULLS FIRST LIMIT 1`,
-    [accountId],
+    [accountId, type],
   );
   return rows[0] ?? null;
+}
+
+export const activeBan = (db: Queryable, accountId: string) => activeSanction(db, accountId, 'ban');
+
+/** Until when the account can't chat (ms since the epoch): 0 = it can, Infinity = muted for good. */
+export async function chatMutedUntil(db: Queryable, accountId: string): Promise<number> {
+  const mute = await activeSanction(db, accountId, 'chat_mute');
+  return mute ? (mute.expires_at?.getTime() ?? Infinity) : 0;
 }
 
 export async function providers(db: Queryable, accountId: string): Promise<('senha' | 'discord')[]> {

@@ -4,7 +4,7 @@ import type { Server } from 'bun';
 import { join, normalize } from 'node:path';
 import { CLOSE, NET, sanitizeName, type ClientMsg, type ServerMsg } from '@shared/protocol';
 import { DEFAULT_MAP, isMapId, MAPS, type MapId } from '@shared/maps';
-import { activeBan, emptyDelta, flushProgress, getAccount, loadGameProfile, openParticipation } from './accounts';
+import { activeBan, chatMutedUntil, emptyDelta, flushProgress, getAccount, loadGameProfile, openParticipation } from './accounts';
 import { handleApi, ticketKey } from './api';
 import type { Deps } from './auth/sessions';
 import { CONFIG } from './config';
@@ -12,7 +12,7 @@ import { createDb, migrate } from './db';
 import { originAllowed, setPeer } from './http';
 import { scheduleJobs } from './jobs';
 import { deltaIsEmpty, equippedOf, liveAccount, mergeDelta, progressMsg, type LiveAccount } from './progress';
-import { createRedis, REVOCATION_CHANNEL } from './redis';
+import { createRedis, MUTE_CHANNEL, REVOCATION_CHANNEL } from './redis';
 import { Session, type Conn } from './session';
 
 // Resolves to <repo>/dist both from server/app.ts (dev) and from build/server.js (production).
@@ -126,11 +126,17 @@ export async function startServer(opts: Options): Promise<GameServer> {
     return flush(conn.account, true);
   }
 
-  // --- Revocation: logout, password reset, ban or deletion closes the account's game connection -------
-  await sub.subscribe(REVOCATION_CHANNEL);
-  sub.on('message', (_channel, accountId) => {
+  // --- Revocation: logout, password reset, ban or deletion closes the account's game connection; a chat
+  // mute (or its removal) is reloaded on the live connection, so it takes effect in a running match ------
+  await sub.subscribe(REVOCATION_CHANNEL, MUTE_CHANNEL);
+  sub.on('message', (channel, accountId) => {
     const c = byAccount.get(accountId);
-    if (c) c.ws.close(CLOSE.revoked, 'sessao encerrada');
+    if (!c) return;
+    if (channel === REVOCATION_CHANNEL) c.ws.close(CLOSE.revoked, 'sessao encerrada');
+    else if (channel === MUTE_CHANNEL)
+      chatMutedUntil(db, accountId)
+        .then((until) => (c.account.chatMutedUntil = until))
+        .catch((err) => console.error('[chat] silêncio:', (err as Error).message));
   });
 
   // --- Static files from dist/ (production) -------------------------------------------------------------
@@ -168,7 +174,8 @@ export async function startServer(opts: Options): Promise<GameServer> {
     if (!accountId) return refuse(401);
     const account = await getAccount(db, accountId);
     if (!account || account.status !== 'active' || (await activeBan(db, accountId))) return refuse(403);
-    const peer: Peer = { account: liveAccount(await loadGameProfile(db, accountId)), conn: null, bucket: MAX_MSGS_PER_SEC, bucketAt: now() };
+    const [profile, mutedUntil] = await Promise.all([loadGameProfile(db, accountId), chatMutedUntil(db, accountId)]);
+    const peer: Peer = { account: liveAccount(profile, mutedUntil), conn: null, bucket: MAX_MSGS_PER_SEC, bucketAt: now() };
     return server.upgrade(req, { data: peer }) ? undefined : refuse(400);
   }
 

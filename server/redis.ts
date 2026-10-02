@@ -5,6 +5,9 @@ import { Redis } from 'ioredis';
 /** Published with an account id whenever that account's live game connections must close. */
 export const REVOCATION_CHANNEL = 'oc:revogacao';
 
+/** Published with an account id whenever that account's chat mute changed: servers reload it. */
+export const MUTE_CHANNEL = 'oc:silencio';
+
 export function createRedis(url: string) {
   const redis = new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: false });
   redis.on('error', (err) => console.error('[redis]', err.message));

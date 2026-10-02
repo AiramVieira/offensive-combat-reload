@@ -2,7 +2,8 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- resizes-visual: the phone keyboard (chat) covers the game instead of shrinking the page and the buttons. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
     <!-- Phones: "Add to Home Screen" opens the game fullscreen in landscape (iPhone has no Fullscreen API). -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -31,40 +32,62 @@
       <div id="cook" class="hidden"><div id="cook-fill"></div></div>
       <div id="grenade-warn" class="hidden"><span class="icon">💣</span><span class="arrow">▲</span></div>
       <div id="banner"></div>
-      <div id="prompt" class="hidden sticker">
+      <div id="prompt" class="hidden">
         <kbd>E</kbd><span id="prompt-text"></span>
         <div class="prompt-bar"><div id="prompt-fill"></div></div>
       </div>
 
-      <div id="score" class="sticker">
-        <div><span id="score-points-label"></span><b id="score-points">0</b></div>
-        <div><span id="score-kills-label"></span><b id="score-kills">0</b></div>
-        <div><span id="score-acc-label"></span><b id="score-acc">0%</b></div>
+      <div id="score">
+        <div><b id="score-points">0</b><span id="score-points-label"></span></div>
+        <div><b id="score-kills">0</b><span id="score-kills-label"></span></div>
+        <div><b id="score-acc">0%</b><span id="score-acc-label"></span></div>
       </div>
 
       <div id="killfeed"></div>
 
-      <div id="health" class="sticker">
-        <span id="health-label"></span>
-        <div id="health-bar"><div id="health-fill"></div></div>
-        <b id="health-num">100</b>
+      <!-- Session chat (online): the last lines over the game; the box opens with Enter/T or the chat button. -->
+      <div id="chat" class="hidden">
+        <div id="chat-log" aria-live="polite"></div>
+        <form id="chat-form" class="hidden" autocomplete="off">
+          <div id="chat-quick"></div>
+          <div class="chat-row">
+            <input id="chat-input" type="text" enterkeyhint="send" spellcheck="false" />
+            <button id="chat-send" type="submit"></button>
+            <button id="chat-close" type="button">✕</button>
+          </div>
+          <small id="chat-hint" class="desktop-only"></small>
+        </form>
       </div>
 
-      <div id="ammo" class="sticker">
-        <div id="ammo-warn"></div>
-        <div id="grenades"></div>
+      <div id="health">
+        <b id="health-num">100</b>
+        <div class="health-side">
+          <span id="health-label"></span>
+          <div id="health-bar"><div id="health-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Ammo, bottom right: a status line of its own (reload, low, empty), then grenades and the count. -->
+      <div id="ammo">
+        <div id="ammo-status">
+          <span id="ammo-warn"></span>
+          <div id="reload-bar"><div id="reload-fill"></div></div>
+        </div>
+        <div class="ammo-row">
+          <div id="grenades"></div>
+          <div class="ammo-count"><b id="ammo-mag">30</b><span class="ammo-sep">/</span><span id="ammo-reserve">120</span></div>
+        </div>
         <div id="weapon-name"></div>
-        <div class="ammo-count"><b id="ammo-mag">30</b><span>/</span><span id="ammo-reserve">120</span></div>
       </div>
 
       <div id="death" class="hidden">
-        <div class="death-card sticker">
+        <div class="death-card">
           <div id="death-msg"></div>
           <div id="death-timer"></div>
         </div>
       </div>
 
-      <div id="scoreboard" class="hidden sticker">
+      <div id="scoreboard" class="hidden">
         <div class="sb-top"><b id="scoreboard-title"></b><span id="scoreboard-session"></span></div>
         <table>
           <thead><tr id="scoreboard-head"></tr></thead>
@@ -172,6 +195,7 @@
             <label><span id="lbl-vol"></span><input id="set-vol" type="range" min="0" max="1" step="0.05" /><output id="out-vol"></output></label>
             <label><span id="lbl-quality"></span><select id="set-quality"></select><output></output></label>
             <label class="check"><input id="set-invert" type="checkbox" /><span id="lbl-invert"></span></label>
+            <label id="fs-desktop" class="check desktop-only"><input id="set-fullscreen-desktop" type="checkbox" /><span id="lbl-fullscreen-desktop"></span></label>
           </div>
         </div>
         <p id="menu-debug-hint" class="hint desktop-only"></p>

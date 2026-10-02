@@ -1,8 +1,10 @@
-// Staff actions (run from tools/admin.ts): bans as sanction history, staff roles, and the audit trail.
-// A ban also revokes the account's sessions and closes its game connection on every server.
-import { accountByTag, audit } from './accounts';
+// Staff actions (run from tools/admin.ts): bans and chat mutes as sanction history, staff roles, and the
+// audit trail. A ban also revokes the account's sessions and closes its game connection on every server; a
+// mute reaches the account's running match through Redis (MUTE_CHANNEL).
+import { accountByTag, audit, type SanctionType } from './accounts';
 import type { Deps } from './auth/sessions';
 import { revokeAll } from './auth/sessions';
+import { MUTE_CHANNEL } from './redis';
 
 export class ModerationError extends Error {}
 
@@ -21,29 +23,58 @@ export function parseDuration(s: string): number | null {
   return n * { d: 86400_000, h: 3600_000, m: 60_000 }[m[2].toLowerCase() as 'd' | 'h' | 'm'];
 }
 
-export async function ban(deps: Deps, tag: string, reason: string, duration: string, by: string | null = null) {
-  const accountId = await resolve(deps, tag);
+/** Adds a sanction of `type` for `duration` ("7d", "permanente"...); returns when it ends (null: never). */
+async function sanction(deps: Deps, accountId: string, type: SanctionType, reason: string, duration: string, by: string | null) {
   const ms = parseDuration(duration);
   const { rows } = await deps.db.query<{ expires_at: Date | null }>(
     `INSERT INTO sanction (account_id, type, reason, issued_by, expires_at)
-     VALUES ($1, 'ban', $2, $3, CASE WHEN $4::bigint IS NULL THEN NULL ELSE now() + ($4::bigint * interval '1 millisecond') END)
+     VALUES ($1, $2, $3, $4, CASE WHEN $5::bigint IS NULL THEN NULL ELSE now() + ($5::bigint * interval '1 millisecond') END)
      RETURNING expires_at`,
-    [accountId, reason, by, ms],
+    [accountId, type, reason, by, ms],
   );
+  return rows[0].expires_at;
+}
+
+/** Revokes the account's active sanctions of `type`; returns how many there were. */
+async function lift(deps: Deps, accountId: string, type: SanctionType) {
+  const { rowCount } = await deps.db.query(
+    `UPDATE sanction SET revoked_at = now()
+      WHERE account_id = $1 AND type = $2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
+    [accountId, type],
+  );
+  return rowCount ?? 0;
+}
+
+export async function ban(deps: Deps, tag: string, reason: string, duration: string, by: string | null = null) {
+  const accountId = await resolve(deps, tag);
+  const until = await sanction(deps, accountId, 'ban', reason, duration, by);
   await revokeAll(deps, accountId);
   await audit(deps.db, accountId, 'ban', {}, `${reason} (${duration})`);
-  return rows[0].expires_at;
+  return until;
 }
 
 export async function unban(deps: Deps, tag: string) {
   const accountId = await resolve(deps, tag);
-  const { rowCount } = await deps.db.query(
-    `UPDATE sanction SET revoked_at = now()
-      WHERE account_id = $1 AND type = 'ban' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`,
-    [accountId],
-  );
+  const n = await lift(deps, accountId, 'ban');
   await audit(deps.db, accountId, 'unban');
-  return rowCount ?? 0;
+  return n;
+}
+
+/** Chat mute: the account keeps playing, its chat lines are dropped (in a running match too). */
+export async function mute(deps: Deps, tag: string, reason: string, duration: string, by: string | null = null) {
+  const accountId = await resolve(deps, tag);
+  const until = await sanction(deps, accountId, 'chat_mute', reason, duration, by);
+  await deps.redis.publish(MUTE_CHANNEL, accountId);
+  await audit(deps.db, accountId, 'chat_mute', {}, `${reason} (${duration})`);
+  return until;
+}
+
+export async function unmute(deps: Deps, tag: string) {
+  const accountId = await resolve(deps, tag);
+  const n = await lift(deps, accountId, 'chat_mute');
+  await deps.redis.publish(MUTE_CHANNEL, accountId);
+  await audit(deps.db, accountId, 'chat_unmute');
+  return n;
 }
 
 export async function setRole(deps: Deps, tag: string, role: string, remove: boolean, by: string | null = null) {

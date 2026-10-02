@@ -16,7 +16,7 @@ import { bodyStats } from '@shared/appearance';
 import type { MapId } from '@shared/maps';
 import { knifeData, levelInfo, rifleData, sanitizeLoadout, weaponOfKill, type Loadout } from '@shared/progression';
 import { accountLevelOf, addAccountXp, addTime, addWeaponXp, equip, equippedOf, progressMsg, type LevelUp, type LiveAccount } from './progress';
-import { NET, ONLINE_GRENADE_LEVEL, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
+import { NET, ONLINE_GRENADE_LEVEL, sanitizeChat, type Award, type ClientMsg, type CorpseInfo, type KillKind, type NetState, type PlayerInfo, type ServerMsg, type Sex, type SessionInfo, type Vec3 } from '@shared/protocol';
 
 const RIFLE = WEAPONS.rifle_padrao;
 const PEN_MIN_KEEP = minPenetrationKeep(RIFLE);
@@ -62,6 +62,9 @@ interface SPlayer {
   lastStab: number;
   lastShotRelay: number;
   lastProp: number;
+  /** Chat token bucket (NET.chatBurst, one back every NET.chatEveryMs). */
+  chatTokens: number;
+  chatAt: number;
   grenades: Map<number, { thrownAt: number; fuse: number; impact: boolean; mine: boolean; origin: Vec3; speed: number }>;
   dance: { corpse: number; since: number } | null;
 }
@@ -169,6 +172,8 @@ export class Session {
       lastStab: 0,
       lastShotRelay: 0,
       lastProp: 0,
+      chatTokens: NET.chatBurst,
+      chatAt: this.now(),
       grenades: new Map(),
       dance: null,
     };
@@ -232,6 +237,18 @@ export class Session {
       case 'swing':
         if (p.alive) this.broadcast({ t: 'swing', id: p.id }, p.id);
         return;
+      case 'chat': {
+        const text = sanitizeChat(msg.text);
+        if (!text) return;
+        if (Date.now() < p.conn.account.chatMutedUntil) return conn.send({ t: 'chatRefused', reason: 'muted' });
+        p.chatTokens = Math.min(NET.chatBurst, p.chatTokens + (now - p.chatAt) / NET.chatEveryMs);
+        p.chatAt = now;
+        if (p.chatTokens < 1) return conn.send({ t: 'chatRefused', reason: 'slow' });
+        p.chatTokens--;
+        // The sender too: everyone sees the same, sanitized line.
+        this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
+        return;
+      }
       case 'hit':
         return this.onHit(p, msg.target, msg.region, msg.dist, msg.keep, now);
       case 'stab':
