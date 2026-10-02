@@ -1,5 +1,6 @@
 import type { Quality } from '../render/quality';
 import { IS_MOBILE } from './device';
+import { mergeKeybinds, type Keybinds } from './keybinds';
 
 export interface Settings {
   /** Degrees per mouse count = sensitivity * 0.022 (Source-style). */
@@ -32,6 +33,13 @@ export interface Settings {
   adsHold: boolean;
   /** Controller look speed (1 = default, 220°/s at full tilt). */
   padSensitivity: number;
+  /** Keys per action, primary and alternate (keybinds.ts). */
+  keybinds: Keybinds;
+  /**
+   * What is printed on each key the player bound, learned from the key press (key code → character): names the
+   * keys on layouts other than QWERTY where the browser has no layout map (Firefox).
+   */
+  keyLabels: Record<string, string>;
 }
 
 const KEY = 'oc.settings.v1';
@@ -51,16 +59,30 @@ const DEFAULTS: Settings = {
   fullscreen: true,
   adsHold: false,
   padSensitivity: 1,
+  keybinds: mergeKeybinds(undefined),
+  keyLabels: {},
 };
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      // Keybinds merge action by action (a plain spread would drop the defaults of actions added later).
+      return { ...DEFAULTS, ...saved, keybinds: mergeKeybinds(saved?.keybinds), keyLabels: cleanLabels(saved?.keyLabels) };
+    }
   } catch {
     /* storage unavailable */
   }
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, keybinds: mergeKeybinds(undefined), keyLabels: {} };
+}
+
+/** Learned key names from storage: single printable characters only. */
+function cleanLabels(saved: unknown): Record<string, string> {
+  if (typeof saved !== 'object' || saved === null) return {};
+  return Object.fromEntries(
+    Object.entries(saved).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim().length === 1),
+  );
 }
 
 export function saveSettings(s: Settings) {

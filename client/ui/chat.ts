@@ -1,11 +1,11 @@
-// Session chat (online only). The last lines float over the game and fade after a while; Enter or T opens
+// Session chat (online only). The last lines float over the game and fade after a while; the chat keys open
 // the text box on a computer (Enter sends, Esc closes), the chat button on a phone, where one-tap phrases
 // send without opening the keyboard. The server sanitizes, rate-limits and relays every line (server/
 // session.ts) and the sender gets their own line back, so everyone sees the same thing. Lines are always
 // written with textContent, never as HTML.
 import { NET, sanitizeChat } from '@shared/protocol';
 import { IS_MOBILE } from '../core/device';
-import type { Input } from '../core/input';
+import { BINDINGS, type Input } from '../core/input';
 import { getLang, QUICK_CHAT, t } from './strings';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,10 +41,11 @@ export class Chat {
         b.addEventListener('click', () => this.submit(phrase));
         quick.appendChild(b);
       }
-    // Computer: Enter or T while playing opens it (preventDefault: the T isn't typed into the box).
+    // Computer: the chat keys (Enter or T by default) while playing open it (preventDefault: the T isn't typed
+    // into the box).
     window.addEventListener('keydown', (e) => {
       if (!this.enabled || this.opened || !this.input.locked || e.repeat) return;
-      if (e.code !== 'Enter' && e.code !== 'NumpadEnter' && e.code !== 'KeyT') return;
+      if (!BINDINGS.chat.includes(e.code)) return;
       e.preventDefault();
       this.open();
     });
