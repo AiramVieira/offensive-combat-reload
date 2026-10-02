@@ -17,7 +17,7 @@ export async function sendMail(mail: Mail) {
   if (!CONFIG.smtp.user || !CONFIG.smtp.appPassword) {
     outbox.push(mail);
     if (outbox.length > 50) outbox.shift();
-    if (!process.env.VITEST) console.log(`[email] SMTP não configurado; mensagem para ${mail.to}:\n${mail.text}`);
+    if (process.env.NODE_ENV !== 'test') console.log(`[email] SMTP não configurado; mensagem para ${mail.to}:\n${mail.text}`);
     return;
   }
   transport ??= nodemailer.createTransport({

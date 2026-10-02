@@ -2,15 +2,20 @@
 
 Homenagem de mecânicas ao FPS de navegador da U4iA Games. Esta é a **Fase 1 do roadmap**: protótipo offline de tiro.
 
+Precisa só do [Bun](https://bun.com) 1.4 ou mais novo (o Node não é usado em nenhuma etapa):
+
 ```bash
-npm install
+bun install
 docker compose up -d banco redis   # PostgreSQL + Redis das contas (uma vez; ficam rodando)
-npm run dev:online   # servidor do jogo + Vite: http://localhost:5173
-npm run dev          # só o cliente (treino offline funciona sem servidor)
-npm test             # testes do servidor (usam o banco e o Redis acima)
-npm run build && npm start   # produção: jogo e servidor numa porta só, http://localhost:8787
+bun run dev:online   # servidor do jogo + Vite: http://localhost:5173
+bun run dev          # só o cliente (treino offline funciona sem servidor)
+bun test             # testes do servidor (usam o banco e o Redis acima)
+bun run typecheck    # TypeScript 7 (o compilador nativo, em Go)
+bun run build && bun start   # produção: jogo e servidor numa porta só, http://localhost:8787
 docker compose up -d --build # produção com nginx, banco e Redis: http://localhost:8080
 ```
+
+Para jogar com os colegas, `bun link` (uma vez, nesta pasta) cria o comando global **`offensive`**. De qualquer pasta, ele abre o Docker se estiver fechado, constrói e sobe tudo, espera o jogo responder e mostra os endereços para mandar (Radmin, Wi-Fi). Também tem `offensive parar`, `offensive logs`, `offensive status` e `offensive firewall`.
 
 Para **publicar e jogar com amigos** (Radmin VPN, túnel, roteador ou servidor alugado, com nginx), veja **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
@@ -73,7 +78,7 @@ O que muda no jogo ([shared/appearance.ts](shared/appearance.ts), aplicado no cl
 
 O editor mostra esses efeitos (vida, altura da visão, tamanho da hitbox, recarga e velocidade) enquanto você escolhe. O bloqueio de movimento (onde o personagem cabe) é igual para todos. Os bots ganham um visual aleatório, com os mesmos efeitos.
 
-**Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Node no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
+**Como os outros entram:** na mesma rede, eles abrem `http://<seu-ip>:5173` (o Vite mostra o endereço "Network"; no Windows, permita o Bun no firewall quando ele pedir). Pela internet, veja [docs/DEPLOY.md](docs/DEPLOY.md).
 
 **No jogo:** `Tab` mostra o placar (pontos, abates, mortes, opressões, ping) e `Esc` → "Sair para o início" volta para a home.
 
@@ -134,9 +139,9 @@ Se o jogo rodar a ~10 FPS, o navegador provavelmente está desenhando sem placa 
 ```
 shared/   movimento, constantes, dados de armas, progressão, nível da conta e protocolo (cliente e servidor)
 client/   core (loop, input), render, world (mapa, superfícies, glTF, física), entities, weapons, gameplay, audio, ui, net (API e WebSocket)
-server/   app (HTTP + WebSocket), api e auth/ (contas), accounts (SQL), session (partida), progress, migrations/, tests/
+server/   app (Bun.serve: HTTP + WebSocket), api e auth/ (contas), accounts (SQL), session (partida), progress, migrations/, tests/
 public/   textures/ (manifest.json), models/ e maps/ (.glb), basis/ (decodificador KTX2)
-tools/    gerador dos .glb de exemplo (npm run exemplos:glb) e console de moderação (npm run admin)
+tools/    gerador dos .glb de exemplo (bun run exemplos:glb) e console de moderação (bun run admin)
 docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, contas, e-mail e Discord
 ```
 
@@ -148,6 +153,7 @@ docs/     MAPAS.md: como criar mapas, props e texturas; DEPLOY.md: publicar, con
 - O controlador do Rapier não se move se começar um passo dentro de outro colisor; o jogador é **empurrado para fora** de personagens sobrepostos, e bonecos só renascem com o lugar livre.
 - Agachar fica só no **C**. `Ctrl` foi deixado de fora porque `Ctrl+W` fecha a aba do navegador fora do modo tela cheia.
 - Os sons são sintetizados enquanto não houver arquivos de áudio; cada função corresponde a uma entrada futura do banco de sons.
+- O servidor roda no **Bun**: um único `Bun.serve` atende a API, os arquivos e o WebSocket nativo. Cada sessão é um tópico do pub/sub do Bun, então o snapshot de cada tick é serializado uma vez por sala, não uma vez por jogador. As senhas usam `Bun.password` (Argon2id, com os mesmos parâmetros dos hashes já gravados).
 
 ## Próximo passo (Fase 2)
 

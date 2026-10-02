@@ -15,5 +15,6 @@
     "types": ["vite/client"],
     "paths": { "@shared/*": ["./shared/*"] }
   },
-  "include": ["client", "shared"]
+  "include": ["client", "shared"],
+  "exclude": ["client/tests"]
 }

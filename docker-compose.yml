@@ -1,6 +1,6 @@
 # docker compose up -d --build   →   http://<este-computador>:8080
 # Change the public port with PORTA, e.g.  PORTA=80 docker compose up -d --build
-# Development (npm run dev:online) only needs the database and Redis:  docker compose up -d banco redis
+# Development (bun run dev:online) only needs the database and Redis:  docker compose up -d banco redis
 # Secrets and public addresses come from a .env file next to this one (see docs/DEPLOY.md).
 services:
   jogo:

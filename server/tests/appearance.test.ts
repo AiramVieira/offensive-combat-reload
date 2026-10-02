@@ -1,7 +1,7 @@
 // Character customization: validation, the profile API, and what the look does online (health, and
 // everyone seeing it, bodies included).
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bodyStats, DEFAULT_FACE, defaultAppearance, EYE_STYLES, FACE_SHAPES, hitboxSize, randomAppearance, sanitizeAppearance, sanitizeFace, wear, type Appearance } from '@shared/appearance';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { bodyStats, DEFAULT_FACE, defaultAppearance, EYE_STYLES, FACE_SHAPES, hitboxSize, randomAppearance, sanitizeAppearance, sanitizeFace, wear, type Appearance, type Face } from '@shared/appearance';
 import { CLOTH_COLORS } from '@shared/palette';
 import { computeDamage, HIT_REGIONS, LETHAL_DAMAGE, WEAPONS } from '@shared/weapons';
 import type { GameServer } from '../app';
@@ -64,7 +64,7 @@ describe('regras da aparência', () => {
   });
 
   it('rosto: formato, olhos, sobrancelhas, nariz, boca, orelhas e marcas válidos; o resto volta ao padrão', () => {
-    const ok = { formato: 'coracao', sobrancelhas: 'grossa', nariz: 'aquilino', boca: 'carnuda', orelhas: 'abano', marcas: 'sardas' };
+    const ok: Face = { formato: 'coracao', sobrancelhas: 'grossa', nariz: 'aquilino', boca: 'carnuda', orelhas: 'abano', marcas: 'sardas' };
     const a = sanitizeAppearance({ olhosEstilo: 'puxado', rosto: ok }, 'f');
     expect(a.olhosEstilo).toBe('puxado');
     expect(a.rosto).toEqual(ok);

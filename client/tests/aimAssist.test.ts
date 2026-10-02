@@ -1,7 +1,7 @@
 // Aim assist (client/gameplay/aimAssist.ts): slows the look over a body, follows a moving target only while the
 // player is aiming, ignores what's off to the side and the dead.
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { AimAssist, ASSIST } from '../gameplay/aimAssist';
 
 const eye = new THREE.Vector3(0, 1.6, 0);

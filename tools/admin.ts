@@ -1,12 +1,12 @@
 // Staff console (Resposta P27 do plano de autenticação). Talks to the same database and Redis as the
 // game server, so a ban also kicks the player out of a running match.
 //
-//   npm run admin -- banir "Nome#1234" "motivo" 7d        (7d, 12h, 30m ou permanente)
-//   npm run admin -- desbanir "Nome#1234"
-//   npm run admin -- papel "Nome#1234" moderador [--remover]
-//   npm run admin -- sancoes "Nome#1234"
+//   bun run admin banir "Nome#1234" "motivo" 7d        (7d, 12h, 30m ou permanente)
+//   bun run admin desbanir "Nome#1234"
+//   bun run admin papel "Nome#1234" moderador [--remover]
+//   bun run admin sancoes "Nome#1234"
 //
-// In Docker: docker compose exec jogo node build/admin.mjs banir "Nome#1234" "motivo" 7d
+// In Docker: docker compose exec jogo bun build/admin.js banir "Nome#1234" "motivo" 7d
 import { CONFIG } from '../server/config';
 import { createDb, migrate } from '../server/db';
 import { ban, ModerationError, sanctions, setRole, unban } from '../server/moderacao';

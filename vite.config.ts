@@ -9,7 +9,7 @@ export default defineConfig({
     port: 5173,
     // Reachable from other machines on the network, so friends can join your session.
     host: true,
-    // The game server runs separately in dev (npm run server); proxy its API and WebSocket to keep one
+    // The game server runs separately in dev (bun run server); proxy its API and WebSocket to keep one
     // origin (the session cookie and the Origin check both rely on it). xfwd passes the player's IP along.
     proxy: {
       '/api': { target: 'http://localhost:8787', xfwd: true },
