@@ -1140,14 +1140,30 @@ async function boot() {
   worldDebug.frustumCulled = false;
   worldDebug.visible = false;
   ctx.scene.add(worldDebug);
+  // What moves (characters' blockers and movement bodies, grenades, doors) is drawn every frame: a snapshot
+  // a fraction of a second old trails behind a running player like a second one.
+  const movingDebug = new THREE.LineSegments(new THREE.BufferGeometry(), worldDebug.material);
+  movingDebug.frustumCulled = false;
+  movingDebug.visible = false;
+  ctx.scene.add(movingDebug);
   let worldDebugAge = Infinity;
-  /** Map colliders from Rapier's debug renderer (character hitboxes excluded: they have their own view). */
+  const fillDebug = (lines: THREE.LineSegments, { vertices, colors }: RAPIER.DebugRenderBuffers) => {
+    lines.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    lines.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    lines.geometry.computeBoundingSphere();
+  };
+  /** Fixed map colliders from Rapier's debug renderer. */
   const refreshWorldDebug = () => {
-    const { vertices, colors } = physics.world.debugRender(undefined, (c) => ((c.collisionGroups() >>> 16) & GROUP.HITBOX) === 0);
-    worldDebug.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    worldDebug.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    worldDebug.geometry.computeBoundingSphere();
+    fillDebug(worldDebug, physics.world.debugRender(RAPIER.QueryFilterFlags.ONLY_FIXED));
     worldDebugAge = 0;
+  };
+  /** Moving colliders, but not character hitboxes (they have their own view) nor our own body (the camera's inside it). */
+  const refreshMovingDebug = () => {
+    const own = [player.mb.body.handle, playerRig?.body.handle];
+    fillDebug(
+      movingDebug,
+      physics.world.debugRender(RAPIER.QueryFilterFlags.EXCLUDE_FIXED, (c) => ((c.collisionGroups() >>> 16) & GROUP.HITBOX) === 0 && !own.includes(c.parent()?.handle)),
+    );
   };
   let hudTimer = 0;
   let fpsAvg = 60;
@@ -1191,12 +1207,13 @@ async function boot() {
       bots?.setDebug(chars);
       const navDebug = (window as unknown as { __ocNavDebug?: THREE.Object3D }).__ocNavDebug;
       if (navDebug) navDebug.visible = debugView === 'all';
-      worldDebug.visible = debugView === 'all';
+      worldDebug.visible = movingDebug.visible = debugView === 'all';
       if (worldDebug.visible) refreshWorldDebug();
       hud.notice(t(debugView === 'chars' ? 'debugViewChars' : debugView === 'all' ? 'debugViewAll' : 'debugViewOff'));
     }
-    // Moving colliders (doors, props) keep the overlay current, a few times per second.
+    // Map colliders can still be removed or added (props): a few times per second is enough for them.
     if (worldDebug.visible && (worldDebugAge += frameDt) > 0.2) refreshWorldDebug();
+    if (movingDebug.visible) refreshMovingDebug();
 
     // Mouse look is applied per render frame for minimum latency; ADS scales by the zoom.
     if (input.locked && !player.dead && !taunt.active) {
